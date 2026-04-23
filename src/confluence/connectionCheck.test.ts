@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RequestUrlParam } from "obsidian";
 import { checkConfluenceConnection, type ConfluenceRequestTransport } from "./connectionCheck";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
@@ -19,19 +20,35 @@ function createTransport(response: Awaited<ReturnType<ConfluenceRequestTransport
 
 describe("checkConfluenceConnection", () => {
   it("returns success with current user information", async () => {
-    const result = await checkConfluenceConnection(createSettings(), createTransport({
-      status: 200,
-      json: {
-        accountId: "account-1",
-        displayName: "Owner"
-      }
-    }));
+    const capturedRequests: RequestUrlParam[] = [];
+    const transport: ConfluenceRequestTransport = async (request) => {
+      capturedRequests.push(request);
+
+      return {
+        status: 200,
+        json: {
+          accountId: "account-1",
+          displayName: "Owner"
+        }
+      };
+    };
+
+    const result = await checkConfluenceConnection(createSettings(), transport);
 
     expect(result).toEqual({
       ok: true,
       accountId: "account-1",
       displayName: "Owner",
       message: "Confluence 연결에 성공했습니다: Owner"
+    });
+    expect(capturedRequests).toHaveLength(1);
+    expect(capturedRequests[0]).toMatchObject({
+      url: "https://selta.atlassian.net/wiki/rest/api/user/current",
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Basic b3duZXJAZXhhbXBsZS5jb206c2VjcmV0LXRva2Vu"
+      }
     });
   });
 
