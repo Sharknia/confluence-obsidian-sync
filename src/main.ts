@@ -4,9 +4,35 @@ import {
   PULL_TREE_COMMAND_ID,
   PUSH_CURRENT_PAGE_COMMAND_ID
 } from "./commands/commandIds";
+import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
+import {
+  DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+  type ConfluenceSyncSettings
+} from "./settings/defaultSettings";
 
 export default class ConfluenceObsidianSyncPlugin extends Plugin {
+  settings: ConfluenceSyncSettings = { ...DEFAULT_CONFLUENCE_SYNC_SETTINGS };
+
   override async onload(): Promise<void> {
+    await this.loadSettings();
+    this.addSettingTab(new ConfluenceSyncSettingTab(this));
+    this.registerCommands();
+  }
+
+  async loadSettings(): Promise<void> {
+    const storedSettings = (await this.loadData()) as Partial<ConfluenceSyncSettings> | undefined;
+
+    this.settings = {
+      ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+      ...(storedSettings ?? {})
+    };
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  private registerCommands(): void {
     this.addCommand({
       id: OPEN_SYNC_PANEL_COMMAND_ID,
       name: "Open Sync Panel",
