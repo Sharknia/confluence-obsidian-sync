@@ -16,6 +16,18 @@ export const DEFAULT_CONFLUENCE_SYNC_SETTINGS: ConfluenceSyncSettings = {
   safeDeleteFolder: ".confluence-sync/trash"
 };
 
+export async function loadConfluenceSyncSettings(loadStoredSettings: () => Promise<unknown>): Promise<ConfluenceSyncSettings> {
+  try {
+    const storedSettings = await loadStoredSettings();
+    return {
+      ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+      ...(isObjectRecord(storedSettings) ? storedSettings : {})
+    };
+  } catch {
+    return { ...DEFAULT_CONFLUENCE_SYNC_SETTINGS };
+  }
+}
+
 export function normalizeConfluenceBaseUrl(rawBaseUrl: string): string {
   const trimmedBaseUrl = rawBaseUrl.trim();
 
@@ -24,4 +36,8 @@ export function normalizeConfluenceBaseUrl(rawBaseUrl: string): string {
   }
 
   return trimmedBaseUrl.replace(/\/+$/u, "");
+}
+
+function isObjectRecord(value: unknown): value is Partial<ConfluenceSyncSettings> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

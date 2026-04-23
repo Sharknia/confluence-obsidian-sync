@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, normalizeConfluenceBaseUrl } from "./defaultSettings";
+import {
+  DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+  loadConfluenceSyncSettings,
+  normalizeConfluenceBaseUrl
+} from "./defaultSettings";
 
 describe("DEFAULT_CONFLUENCE_SYNC_SETTINGS", () => {
   it("uses the SELTA Confluence Cloud base URL as the initial value", () => {
@@ -22,5 +26,13 @@ describe("normalizeConfluenceBaseUrl", () => {
 
   it("returns the default base URL when the value is blank", () => {
     expect(normalizeConfluenceBaseUrl("   ")).toBe("https://selta.atlassian.net");
+  });
+});
+
+describe("loadConfluenceSyncSettings", () => {
+  it("falls back to default settings when stored settings cannot be loaded", async () => {
+    const settings = await loadConfluenceSyncSettings(() => Promise.reject(new Error("Failed to load plugin data")));
+
+    expect(settings).toEqual(DEFAULT_CONFLUENCE_SYNC_SETTINGS);
   });
 });

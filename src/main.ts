@@ -8,6 +8,7 @@ import {
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
 import {
   DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+  loadConfluenceSyncSettings,
   type ConfluenceSyncSettings
 } from "./settings/defaultSettings";
 
@@ -21,12 +22,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    const storedSettings = (await this.loadData()) as Partial<ConfluenceSyncSettings> | undefined;
-
-    this.settings = {
-      ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
-      ...(storedSettings ?? {})
-    };
+    this.settings = await loadConfluenceSyncSettings(() => this.loadData());
   }
 
   async saveSettings(): Promise<void> {
