@@ -1,4 +1,5 @@
-import { PluginSettingTab, Setting } from "obsidian";
+import { Notice, PluginSettingTab, requestUrl, Setting } from "obsidian";
+import { checkConfluenceConnection } from "../confluence/connectionCheck";
 import type ConfluenceObsidianSyncPlugin from "../main";
 import { normalizeConfluenceBaseUrl } from "./defaultSettings";
 
@@ -55,6 +56,40 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
             this.plugin.settings.apiToken = value;
             await this.plugin.saveSettings();
           });
+      });
+
+    const connectionStatusEl = containerEl.createEl("p", {
+      cls: "confluence-sync-connection-status",
+      text: "저장된 인증 정보로 Confluence API 접근 여부를 확인할 수 있습니다."
+    });
+
+    new Setting(containerEl)
+      .setName("Check connection")
+      .setDesc("현재 설정으로 Confluence Cloud 현재 사용자 API를 호출합니다.")
+      .addButton((button) => {
+        button.setButtonText("Check connection").onClick(async () => {
+          button.setDisabled(true);
+          connectionStatusEl.setText("Confluence 연결을 확인하는 중입니다...");
+
+          try {
+            const result = await checkConfluenceConnection(this.plugin.settings, async (request) => {
+              const response = await requestUrl(request);
+              return {
+                status: response.status,
+                json: response.json
+              };
+            });
+
+            connectionStatusEl.setText(result.message);
+            new Notice(result.message);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Confluence 연결 확인 중 알 수 없는 오류가 발생했습니다.";
+            connectionStatusEl.setText(message);
+            new Notice(message);
+          } finally {
+            button.setDisabled(false);
+          }
+        });
       });
 
     new Setting(containerEl)
