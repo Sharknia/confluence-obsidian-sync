@@ -17,6 +17,12 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked
   },
   {
-    ignores: ["dist/**", "dist-types/**", "node_modules/**", "vault-template/.obsidian/plugins/confluence-obsidian-sync/**"]
+    ignores: [
+      ".obsidian/**",
+      "dist/**",
+      "dist-types/**",
+      "node_modules/**",
+      "vault-template/.obsidian/plugins/confluence-obsidian-sync/**"
+    ]
   }
 );

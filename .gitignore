@@ -4,6 +4,7 @@ dist-types/
 coverage/
 .env
 .DS_Store
+.obsidian/
 
 # Confluence 산출물과 개인 인증 정보는 저장소에 포함하지 않는다.
 confluence/
