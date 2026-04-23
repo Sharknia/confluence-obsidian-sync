@@ -73,7 +73,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
 
           try {
             const result = await checkConfluenceConnection(this.plugin.settings, async (request) => {
-              const response = await requestUrl(request);
+              const response = await requestUrl({ ...request, throw: false });
               return {
                 status: response.status,
                 json: response.json
