@@ -1,4 +1,5 @@
 import { Notice, Plugin } from "obsidian";
+import { getMissingConfluenceConnectionFields } from "./confluence/authentication";
 import {
   OPEN_SYNC_PANEL_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
@@ -45,7 +46,14 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       id: PULL_TREE_COMMAND_ID,
       name: "Pull Tree",
       callback: () => {
-        new Notice("Confluence Pull Tree는 Confluence 연결 설정 이후 사용할 수 있습니다.");
+        const missingFields = getMissingConfluenceConnectionFields(this.settings);
+
+        if (missingFields.length > 0) {
+          new Notice(`Pull Tree 실행 전에 Confluence 연결 설정이 필요합니다: ${missingFields.join(", ")}`);
+          return;
+        }
+
+        new Notice("Pull Tree는 루트 페이지 프로젝트 생성 Epic 이후 사용할 수 있습니다.");
       }
     });
 
