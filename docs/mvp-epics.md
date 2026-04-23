@@ -28,6 +28,10 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 - 명령 팔레트에 기본 명령이 등록되어 있다.
 - 설정 화면에 진입할 수 있다.
 
+### 구현 계획
+
+- [Obsidian Plugin Foundation Implementation Plan](superpowers/plans/2026-04-23-obsidian-plugin-foundation.md)
+
 ## Epic 2. Confluence Cloud 연결 설정
 
 ### 목표
