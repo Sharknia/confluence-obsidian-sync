@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam } from "obsidian";
 import { checkConfluenceConnection, type ConfluenceRequestTransport } from "./connectionCheck";
+import { buildBasicAuthorizationHeader } from "./authentication";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
@@ -47,7 +48,7 @@ describe("checkConfluenceConnection", () => {
       method: "GET",
       headers: {
         Accept: "application/json",
-        Authorization: "Basic b3duZXJAZXhhbXBsZS5jb206c2VjcmV0LXRva2Vu"
+        Authorization: buildBasicAuthorizationHeader("owner@example.com", "secret-token")
       }
     });
   });
