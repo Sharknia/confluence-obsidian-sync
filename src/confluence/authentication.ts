@@ -10,19 +10,23 @@ export function getMissingConfluenceConnectionFields(
 ): RequiredConfluenceConnectionField[] {
   const missingFields: RequiredConfluenceConnectionField[] = [];
 
-  if (settings.confluenceBaseUrl.trim().length === 0) {
+  if (isMissingStringSetting(settings.confluenceBaseUrl)) {
     missingFields.push("Confluence base URL");
   }
 
-  if (settings.userEmail.trim().length === 0) {
+  if (isMissingStringSetting(settings.userEmail)) {
     missingFields.push("Atlassian account email");
   }
 
-  if (settings.apiToken.trim().length === 0) {
+  if (isMissingStringSetting(settings.apiToken)) {
     missingFields.push("API token");
   }
 
   return missingFields;
+}
+
+function isMissingStringSetting(value: unknown): boolean {
+  return typeof value !== "string" || value.trim().length === 0;
 }
 
 export function buildBasicAuthorizationHeader(userEmail: string, apiToken: string): string {

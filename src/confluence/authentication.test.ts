@@ -35,6 +35,18 @@ describe("getMissingConfluenceConnectionFields", () => {
 
     expect(missingFields).toEqual(["Confluence base URL", "Atlassian account email", "API token"]);
   });
+
+  it("treats malformed persisted values as missing fields", () => {
+    const missingFields = getMissingConfluenceConnectionFields(
+      createSettings({
+        confluenceBaseUrl: null as unknown as string,
+        userEmail: 123 as unknown as string,
+        apiToken: undefined as unknown as string
+      })
+    );
+
+    expect(missingFields).toEqual(["Confluence base URL", "Atlassian account email", "API token"]);
+  });
 });
 
 describe("buildBasicAuthorizationHeader", () => {
