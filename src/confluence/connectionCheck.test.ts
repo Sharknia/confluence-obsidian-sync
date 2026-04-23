@@ -16,22 +16,22 @@ function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): Conflu
 }
 
 function createTransport(response: Awaited<ReturnType<ConfluenceRequestTransport>>): ConfluenceRequestTransport {
-  return async () => response;
+  return () => Promise.resolve(response);
 }
 
 describe("checkConfluenceConnection", () => {
   it("returns success with current user information", async () => {
     const capturedRequests: RequestUrlParam[] = [];
-    const transport: ConfluenceRequestTransport = async (request) => {
+    const transport: ConfluenceRequestTransport = (request) => {
       capturedRequests.push(request);
 
-      return {
+      return Promise.resolve({
         status: 200,
         json: {
           accountId: "account-1",
           displayName: "Owner"
         }
-      };
+      });
     };
 
     const result = await checkConfluenceConnection(createSettings(), transport);
@@ -93,9 +93,8 @@ describe("checkConfluenceConnection", () => {
   });
 
   it("classifies thrown transport errors as network errors", async () => {
-    const transport: ConfluenceRequestTransport = async () => {
-      throw new Error("getaddrinfo ENOTFOUND selta.atlassian.net");
-    };
+    const transport: ConfluenceRequestTransport = () =>
+      Promise.reject(new Error("getaddrinfo ENOTFOUND selta.atlassian.net"));
 
     const result = await checkConfluenceConnection(createSettings(), transport);
 
