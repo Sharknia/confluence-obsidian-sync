@@ -1,6 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 
 const projectRoot = dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
 const distDirectory = join(projectRoot, "dist");
