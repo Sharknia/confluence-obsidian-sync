@@ -23,7 +23,7 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 ### 완료 기준
 
 - TypeScript 기반 Obsidian 플러그인을 빌드할 수 있다.
-- `npm run build`와 `npm run lint`가 구성되어 있다.
+- `pnpm run build`와 `pnpm run lint`가 구성되어 있다.
 - Obsidian vault template 안에서 플러그인을 로드할 수 있다.
 - 명령 팔레트에 기본 명령이 등록되어 있다.
 - 설정 화면에 진입할 수 있다.

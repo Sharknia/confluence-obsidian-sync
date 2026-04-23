@@ -47,6 +47,15 @@
 - TODO, placeholder, 임시 구현을 남기지 않는다.
 - 테스트 가능한 순수 로직은 작은 함수로 분리한다.
 
+## 개발 도구 기준
+
+- 패키지 매니저는 `pnpm`을 사용한다.
+- 의존성 설치는 `pnpm install`을 기준으로 한다.
+- 제품 빌드는 `pnpm run build`를 기준으로 한다.
+- 린트는 `pnpm run lint`를 기준으로 한다.
+- 검증 스크립트가 필요하면 `pnpm run verify`를 사용한다.
+- `package-lock.json`은 사용하지 않고, `pnpm-lock.yaml`을 lockfile로 사용한다.
+
 ## MVP 제외 항목
 
 - 트리 전체 Overwrite

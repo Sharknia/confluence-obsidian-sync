@@ -4,13 +4,14 @@
   "description": "Confluence 문서를 Obsidian 로컬 Markdown 작업 사본으로 동기화하는 플러그인",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.28.2",
   "main": "dist/main.js",
   "scripts": {
     "build": "node esbuild.config.mjs && node scripts/copy-plugin-assets.mjs",
     "lint": "eslint .",
     "test": "vitest run",
-    "prepare:vault": "npm run build && node scripts/prepare-vault-template.mjs",
-    "verify": "npm run lint && npm run test && npm run build"
+    "prepare:vault": "pnpm run build && node scripts/prepare-vault-template.mjs",
+    "verify": "pnpm run lint && pnpm run test && pnpm run build"
   },
   "keywords": [
     "obsidian",
