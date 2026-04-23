@@ -1,0 +1,34 @@
+{
+  "name": "confluence-obsidian-sync",
+  "version": "0.1.0",
+  "description": "Confluence 문서를 Obsidian 로컬 Markdown 작업 사본으로 동기화하는 플러그인",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs && node scripts/copy-plugin-assets.mjs",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "prepare:vault": "npm run build && node scripts/prepare-vault-template.mjs",
+    "verify": "npm run lint && npm run test && npm run build"
+  },
+  "keywords": [
+    "obsidian",
+    "confluence",
+    "markdown"
+  ],
+  "author": "Confluence Obsidian Sync",
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "obsidian": "^1.8.0",
+    "tslib": "^2.6.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  }
+}

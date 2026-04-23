@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-types/
+coverage/
+.env
+.DS_Store
+
+# Confluence 산출물과 개인 인증 정보는 저장소에 포함하지 않는다.
+confluence/
+.confluence-sync/config.json
+.confluence-sync/projects.json
+
+# vault template에는 플러그인 산출물을 복사하지만 Git에는 원본만 보관한다.
+vault-template/.obsidian/plugins/confluence-obsidian-sync/main.js
+vault-template/.obsidian/plugins/confluence-obsidian-sync/manifest.json
+vault-template/.obsidian/plugins/confluence-obsidian-sync/styles.css
+
+docs/superpowers/plans/
