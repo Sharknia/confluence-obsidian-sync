@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildBasicAuthorizationHeader,
   buildConfluenceApiUrl,
+  getConfluenceApiBaseUrl,
   getMissingConfluenceConnectionFields
 } from "./authentication";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
@@ -13,6 +14,7 @@ function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): Conflu
     apiToken: "secret-token",
     defaultProjectFolder: "confluence",
     safeDeleteFolder: ".confluence-sync/trash",
+    currentProject: null,
     ...overrides
   };
 }
@@ -49,6 +51,13 @@ describe("getMissingConfluenceConnectionFields", () => {
   });
 });
 
+describe("getConfluenceApiBaseUrl", () => {
+  it("normalizes equivalent Confluence base URL forms to the tenant origin", () => {
+    expect(getConfluenceApiBaseUrl("https://selta.atlassian.net/wiki")).toBe("https://selta.atlassian.net");
+    expect(getConfluenceApiBaseUrl("https://selta.atlassian.net/")).toBe("https://selta.atlassian.net");
+  });
+});
+
 describe("buildBasicAuthorizationHeader", () => {
   it("builds a Basic authorization header from email and API token", () => {
     const header = buildBasicAuthorizationHeader("owner@example.com", "secret-token");
@@ -68,6 +77,12 @@ describe("buildConfluenceApiUrl", () => {
     const url = buildConfluenceApiUrl("https://selta.atlassian.net/", "/wiki/rest/api/user/current");
 
     expect(url).toBe("https://selta.atlassian.net/wiki/rest/api/user/current");
+  });
+
+  it("does not duplicate the wiki segment when the base URL already includes it", () => {
+    const url = buildConfluenceApiUrl("https://selta.atlassian.net/wiki", "/wiki/api/v2/pages/123456789");
+
+    expect(url).toBe("https://selta.atlassian.net/wiki/api/v2/pages/123456789");
   });
 
   it("adds a leading slash to the REST path when omitted", () => {

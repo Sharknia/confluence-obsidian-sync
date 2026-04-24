@@ -1,0 +1,256 @@
+import { describe, expect, it } from "vitest";
+import type { RequestUrlParam } from "obsidian";
+import type { ConfluenceRequestTransport } from "../confluence/requestTransport";
+import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import type { ProjectStorageAdapter } from "./projectStorage";
+import { createProjectFromRootUrl } from "./createProjectFromRootUrl";
+
+function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
+  return {
+    confluenceBaseUrl: "https://selta.atlassian.net/wiki",
+    userEmail: "owner@example.com",
+    apiToken: "secret-token",
+    defaultProjectFolder: "confluence",
+    safeDeleteFolder: ".confluence-sync/trash",
+    currentProject: null,
+    ...overrides
+  };
+}
+
+function createTransportMock(
+  response: Awaited<ReturnType<ConfluenceRequestTransport>> | Error
+): {
+  calls: RequestUrlParam[];
+  transport: ConfluenceRequestTransport;
+} {
+  const calls: RequestUrlParam[] = [];
+
+  return {
+    calls,
+    transport: (request: RequestUrlParam) => {
+      calls.push(request);
+
+      if (response instanceof Error) {
+        return Promise.reject(response);
+      }
+
+      return Promise.resolve(response);
+    }
+  };
+}
+
+function createStorageMock(options: {
+  existingPaths?: Set<string>;
+  failOnWritePath?: string;
+} = {}): {
+  calls: string[];
+  writeCalls: Array<{ path: string; data: string }>;
+  storage: ProjectStorageAdapter;
+} {
+  const calls: string[] = [];
+  const writeCalls: Array<{ path: string; data: string }> = [];
+  const existingPaths = options.existingPaths ?? new Set<string>();
+
+  return {
+    calls,
+    writeCalls,
+    storage: {
+      exists(path: string): Promise<boolean> {
+        calls.push(`exists:${path}`);
+        return Promise.resolve(existingPaths.has(path));
+      },
+      mkdir(path: string): Promise<void> {
+        calls.push(`mkdir:${path}`);
+        existingPaths.add(path);
+        return Promise.resolve();
+      },
+      read(path: string): Promise<string> {
+        calls.push(`read:${path}`);
+        return Promise.reject(new Error(`read failed: ${path}`));
+      },
+      write(path: string, data: string): Promise<void> {
+        calls.push(`write:${path}`);
+        writeCalls.push({ path, data });
+
+        if (options.failOnWritePath === path) {
+          return Promise.reject(new Error(`write failed: ${path}`));
+        }
+
+        existingPaths.add(path);
+        return Promise.resolve();
+      }
+    }
+  };
+}
+
+describe("createProjectFromRootUrl", () => {
+  it("returns the created current project and stores the manifest", async () => {
+    const settings = createSettings();
+    const transport = createTransportMock({
+      status: 200,
+      json: {
+        id: "123456789",
+        title: "Project Root",
+        spaceId: "SPACE",
+        version: {
+          number: 7
+        }
+      }
+    });
+    const storage = createStorageMock();
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root#section",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      message: "Confluence 프로젝트를 생성했습니다: Project Root",
+      currentProject: {
+        projectName: "Project Root",
+        spaceId: "SPACE",
+        rootPageId: "123456789",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
+        localFolderPath: "confluence/confluence-page-123456789",
+        manifestPath: "confluence/confluence-page-123456789/.confluence-sync/manifest.json"
+      }
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(storage.writeCalls).toHaveLength(1);
+    expect(storage.writeCalls[0]?.path.startsWith("confluence/confluence-page-123456789/.confluence-sync/manifest.json")).toBe(
+      true
+    );
+
+    const writtenManifest = JSON.parse(storage.writeCalls[0]?.data ?? "{}") as Record<string, unknown>;
+
+    expect(writtenManifest).toMatchObject({
+      manifestVersion: 1,
+      projectName: "Project Root",
+      confluenceBaseUrl: "https://selta.atlassian.net",
+      spaceId: "SPACE",
+      rootPageId: "123456789",
+      rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
+      localRootFolder: "confluence/confluence-page-123456789",
+      localFolderPath: "confluence/confluence-page-123456789",
+      lastPulledAt: null
+    });
+  });
+
+  it("returns the parser message and does not call transport when the URL is invalid", async () => {
+    const settings = createSettings();
+    const transport = createTransportMock({
+      status: 200,
+      json: {}
+    });
+    const storage = createStorageMock();
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "not-a-valid-url",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Confluence 루트 페이지 URL을 해석할 수 없습니다."
+    });
+    expect(transport.calls).toHaveLength(0);
+    expect(storage.calls).toHaveLength(0);
+  });
+
+  it("returns the metadata message and does not write storage when metadata fetch fails", async () => {
+    const settings = createSettings();
+    const transport = createTransportMock({
+      status: 403,
+      json: {}
+    });
+    const storage = createStorageMock();
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: "루트 페이지에 접근할 권한이 없습니다."
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(storage.writeCalls).toHaveLength(0);
+  });
+
+  it("returns the storage message when manifest writing fails", async () => {
+    const settings = createSettings();
+    const transport = createTransportMock({
+      status: 200,
+      json: {
+        id: "123456789",
+        title: "Project Root",
+        spaceId: "SPACE",
+        version: {
+          number: 7
+        }
+      }
+    });
+    const storage = createStorageMock({
+      failOnWritePath: "confluence/confluence-page-123456789/.confluence-sync/manifest.json"
+    });
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: "로컬 프로젝트 폴더 또는 manifest를 생성할 수 없습니다."
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(storage.writeCalls).toHaveLength(1);
+  });
+
+  it("returns the buildProjectPaths error message when the default project folder is invalid", async () => {
+    const settings = createSettings({
+      defaultProjectFolder: "../outside"
+    });
+    const transport = createTransportMock({
+      status: 200,
+      json: {
+        id: "123456789",
+        title: "Project Root",
+        spaceId: "SPACE",
+        version: {
+          number: 7
+        }
+      }
+    });
+    const storage = createStorageMock();
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: "vault 폴더 경로에는 '..'을 사용할 수 없습니다."
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(storage.writeCalls).toHaveLength(0);
+  });
+});

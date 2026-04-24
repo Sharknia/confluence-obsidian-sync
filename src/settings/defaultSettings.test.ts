@@ -35,4 +35,21 @@ describe("loadConfluenceSyncSettings", () => {
 
     expect(settings).toEqual(DEFAULT_CONFLUENCE_SYNC_SETTINGS);
   });
+
+  it("loads stored current project exactly", async () => {
+    const storedSettings = {
+      currentProject: {
+        projectName: "Current Project",
+        spaceId: "SPACE-1",
+        rootPageId: "12345",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE-1/pages/12345",
+        localFolderPath: "/Users/crobat/vault/confluence/current-project",
+        manifestPath: "/Users/crobat/vault/confluence/current-project/.confluence-sync/manifest.json"
+      }
+    };
+
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
+
+    expect(settings.currentProject).toEqual(storedSettings.currentProject);
+  });
 });

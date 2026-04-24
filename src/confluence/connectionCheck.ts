@@ -1,10 +1,10 @@
-import type { RequestUrlParam } from "obsidian";
 import {
   buildBasicAuthorizationHeader,
   buildConfluenceApiUrl,
   getMissingConfluenceConnectionFields
 } from "./authentication";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import type { ConfluenceRequestResult, ConfluenceRequestTransport } from "./requestTransport";
 
 export type ConfluenceConnectionFailureReason =
   | "missing-settings"
@@ -27,13 +27,6 @@ export interface ConfluenceConnectionFailure {
 }
 
 export type ConfluenceConnectionResult = ConfluenceConnectionSuccess | ConfluenceConnectionFailure;
-
-export interface ConfluenceRequestResult {
-  status: number;
-  json: unknown;
-}
-
-export type ConfluenceRequestTransport = (request: RequestUrlParam) => Promise<ConfluenceRequestResult>;
 
 interface CurrentUserResponse {
   accountId?: unknown;

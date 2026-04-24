@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam } from "obsidian";
-import { checkConfluenceConnection, type ConfluenceRequestTransport } from "./connectionCheck";
+import { checkConfluenceConnection } from "./connectionCheck";
 import { buildBasicAuthorizationHeader } from "./authentication";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import type { ConfluenceRequestTransport } from "./requestTransport";
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
   return {
@@ -11,6 +12,7 @@ function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): Conflu
     apiToken: "secret-token",
     defaultProjectFolder: "confluence",
     safeDeleteFolder: ".confluence-sync/trash",
+    currentProject: null,
     ...overrides
   };
 }

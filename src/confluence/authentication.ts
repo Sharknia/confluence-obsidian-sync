@@ -35,8 +35,14 @@ export function buildBasicAuthorizationHeader(userEmail: string, apiToken: strin
 }
 
 export function buildConfluenceApiUrl(baseUrl: string, restPath: string): string {
-  const normalizedBaseUrl = normalizeConfluenceBaseUrl(baseUrl);
+  const apiBaseUrl = getConfluenceApiBaseUrl(baseUrl);
   const normalizedRestPath = restPath.startsWith("/") ? restPath : `/${restPath}`;
 
-  return `${normalizedBaseUrl}${normalizedRestPath}`;
+  return `${apiBaseUrl}${normalizedRestPath}`;
+}
+
+export function getConfluenceApiBaseUrl(baseUrl: string): string {
+  const normalizedBaseUrl = normalizeConfluenceBaseUrl(baseUrl);
+
+  return normalizedBaseUrl.endsWith("/wiki") ? normalizedBaseUrl.slice(0, -"/wiki".length) : normalizedBaseUrl;
 }

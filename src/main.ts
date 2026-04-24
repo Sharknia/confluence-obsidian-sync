@@ -49,7 +49,14 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
           return;
         }
 
-        new Notice("Pull Tree는 루트 페이지 프로젝트 생성 Epic 이후 사용할 수 있습니다.");
+        const currentProject = this.settings.currentProject;
+
+        if (currentProject === null) {
+          new Notice("Pull Tree 실행 전에 설정 화면에서 루트 페이지 기반 프로젝트를 생성하세요.");
+          return;
+        }
+
+        new Notice("Pull Tree는 페이지 트리 Pull Epic에서 구현됩니다.");
       }
     });
 
