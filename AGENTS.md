@@ -54,6 +54,7 @@
 - 제품 빌드는 `pnpm run build`를 기준으로 한다.
 - 린트는 `pnpm run lint`를 기준으로 한다.
 - 검증 스크립트가 필요하면 `pnpm run verify`를 사용한다.
+- Obsidian에서 UI 테스트를 안내하기 전 `pnpm run prepare:current-vault`를 실행하고 `.obsidian/plugins/confluence-obsidian-sync/main.js`에 최신 UI 문자열이 반영됐는지 확인한다.
 - `package-lock.json`은 사용하지 않고, `pnpm-lock.yaml`을 lockfile로 사용한다.
 
 ## MVP 제외 항목
