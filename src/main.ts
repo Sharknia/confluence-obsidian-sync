@@ -1,10 +1,10 @@
 import { Notice, Plugin } from "obsidian";
-import { getMissingConfluenceConnectionFields } from "./confluence/authentication";
 import {
   OPEN_SYNC_PANEL_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
   PUSH_CURRENT_PAGE_COMMAND_ID
 } from "./commands/commandIds";
+import { runPullTreeCommand } from "./commands/pullTreeCommand";
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
 import {
   DEFAULT_CONFLUENCE_SYNC_SETTINGS,
@@ -42,21 +42,10 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       id: PULL_TREE_COMMAND_ID,
       name: "Pull Tree",
       callback: () => {
-        const missingFields = getMissingConfluenceConnectionFields(this.settings);
-
-        if (missingFields.length > 0) {
-          new Notice(`Pull Tree 실행 전에 Confluence 연결 설정이 필요합니다: ${missingFields.join(", ")}`);
-          return;
-        }
-
-        const currentProject = this.settings.currentProject;
-
-        if (currentProject === null) {
-          new Notice("Pull Tree 실행 전에 설정 화면에서 루트 콘텐츠 기반 프로젝트를 생성하세요.");
-          return;
-        }
-
-        new Notice("Pull Tree는 페이지 트리 Pull Epic에서 구현됩니다.");
+        void runPullTreeCommand({
+          settings: this.settings,
+          showNotice: (message) => new Notice(message)
+        });
       }
     });
 

@@ -1,6 +1,6 @@
-import { Notice, PluginSettingTab, requestUrl, Setting } from "obsidian";
+import { Notice, PluginSettingTab, Setting } from "obsidian";
 import { checkConfluenceConnection } from "../confluence/connectionCheck";
-import type { ConfluenceRequestTransport } from "../confluence/requestTransport";
+import { createObsidianRequestTransport } from "../confluence/obsidianRequestTransport";
 import { createProjectFromRootUrl } from "../projects/createProjectFromRootUrl";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type ConfluenceObsidianSyncPlugin from "../main";
@@ -66,6 +66,10 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
     const currentProjectStatusEl = containerEl.createEl("p", {
       cls: "confluence-sync-current-project-status",
       text: this.buildCurrentProjectStatusText()
+    });
+    containerEl.createEl("p", {
+      cls: "confluence-sync-pull-tree-description",
+      text: "Pull Tree는 현재 루트 페이지 기준 Confluence 페이지 트리를 조회하고, Markdown 저장은 다음 Epic에서 연결됩니다."
     });
 
     const projectCreationStatusEl = containerEl.createEl("p", {
@@ -197,18 +201,6 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
     return `현재 프로젝트: ${currentProject.projectName} (${currentProject.localFolderPath})`;
   }
 }
-
-const createObsidianRequestTransport: ConfluenceRequestTransport = async (request) => {
-  const response = (await requestUrl({ ...request, throw: false })) as {
-    status: number;
-    json: unknown;
-  };
-
-  return {
-    status: response.status,
-    json: response.json
-  };
-};
 
 function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): ProjectStorageAdapter {
   return {
