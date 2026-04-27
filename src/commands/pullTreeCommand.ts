@@ -5,7 +5,13 @@ import {
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
 import { buildPageMarkdownFiles } from "../projects/pageMarkdown";
-import { writeMarkdownPages, type ProjectStorageAdapter } from "../projects/projectStorage";
+import { createPullSyncPlan } from "../projects/pullSyncPolicy";
+import {
+  applyPullSyncPlan,
+  listProjectMarkdownFiles,
+  type ProjectStorageAdapter,
+  type PullSyncApplyResult
+} from "../projects/projectStorage";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
 export type PullTreeFetcher = (
@@ -60,7 +66,8 @@ export async function runPullTreeCommand({
     }
 
     let markdownFiles: Awaited<ReturnType<typeof buildPageMarkdownFiles>>;
-    let writeResult: Awaited<ReturnType<typeof writeMarkdownPages>>;
+    let writeResult: PullSyncApplyResult;
+    let syncPlan: ReturnType<typeof createPullSyncPlan>;
 
     try {
       markdownFiles = await buildPageMarkdownFiles({
@@ -70,20 +77,44 @@ export async function runPullTreeCommand({
         pathExists: (path) => storage.exists(path),
         readExistingFile: (path) => storage.read(path)
       });
-      writeResult = await writeMarkdownPages(storage, markdownFiles);
+      const safeDeleteRootPath = buildSafeDeleteRootPath(
+        currentProject.localFolderPath,
+        settings.safeDeleteFolder,
+        new Date()
+      );
+      const localMarkdownFiles = await listProjectMarkdownFiles(
+        storage,
+        currentProject.localFolderPath,
+        removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
+      );
+
+      if (!localMarkdownFiles.ok) {
+        showNotice(localMarkdownFiles.message);
+        return;
+      }
+
+      syncPlan = createPullSyncPlan({
+        projectRootPath: currentProject.localFolderPath,
+        safeDeleteRootPath,
+        remoteFiles: markdownFiles,
+        localFiles: localMarkdownFiles.files
+      });
+      writeResult = await applyPullSyncPlan(storage, syncPlan);
     } catch {
       showNotice("Markdown 파일을 저장할 수 없습니다.");
       return;
     }
 
     if (!writeResult.ok) {
-      showNotice("Markdown 파일을 저장할 수 없습니다.");
+      showNotice("Pull 결과를 로컬 파일에 적용할 수 없습니다.");
       return;
     }
 
+    const createCount = syncPlan.filesToWrite.filter((file) => file.operation === "create").length;
+    const updateCount = syncPlan.filesToWrite.filter((file) => file.operation === "update").length;
     const conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
     showNotice(
-      `Confluence 페이지를 Markdown으로 저장했습니다: ${writeResult.writtenFileCount}개${buildSuccessNoticeSuffix(
+      `Pull 완료: 추가 ${createCount}개, 갱신 ${updateCount}개, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
         result.errors.length,
         conversionWarningCount
       )}`
@@ -112,4 +143,31 @@ function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCo
 
 function toSettingsFieldName(field: RequiredConfluenceConnectionField): string {
   return field === "API token" ? "apiToken" : field;
+}
+
+function buildSafeDeleteRootPath(projectRootPath: string, safeDeleteFolder: string, now: Date): string {
+  return joinVaultPath(projectRootPath, normalizeSafeDeleteFolder(safeDeleteFolder), createTimestampFolderName(now));
+}
+
+function removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath: string): string {
+  const pathSegments = safeDeleteRootPath.split("/");
+
+  return pathSegments.slice(0, -1).join("/");
+}
+
+function normalizeSafeDeleteFolder(safeDeleteFolder: string): string {
+  const normalizedFolder = safeDeleteFolder.trim().replace(/^\/+|\/+$/gu, "");
+
+  return normalizedFolder.length > 0 ? normalizedFolder : ".confluence-sync/trash";
+}
+
+function createTimestampFolderName(now: Date): string {
+  return now.toISOString().replace(/[:.]/gu, "-");
+}
+
+function joinVaultPath(...segments: string[]): string {
+  return segments
+    .map((segment) => segment.replace(/^\/+|\/+$/gu, ""))
+    .filter((segment) => segment.length > 0)
+    .join("/");
 }

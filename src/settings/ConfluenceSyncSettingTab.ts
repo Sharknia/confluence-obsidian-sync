@@ -207,6 +207,8 @@ function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): Projec
     exists: (path) => plugin.app.vault.adapter.exists(path),
     mkdir: (path) => plugin.app.vault.adapter.mkdir(path),
     read: (path) => plugin.app.vault.adapter.read(path),
-    write: (path, data) => plugin.app.vault.adapter.write(path, data)
+    write: (path, data) => plugin.app.vault.adapter.write(path, data),
+    list: (path) => plugin.app.vault.adapter.list(path),
+    rename: (fromPath, toPath) => plugin.app.vault.adapter.rename(fromPath, toPath)
   };
 }
