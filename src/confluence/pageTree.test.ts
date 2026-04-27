@@ -186,6 +186,79 @@ describe("fetchConfluencePageTree", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("continues page descendants from depth 10 page containers", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "100",
+          title: "Root",
+          version: { number: 1 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "200", title: "Depth Ten", type: "page", parentId: "100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "300", title: "Depth Eleven", type: "page", parentId: "200", depth: 1, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "200",
+          title: "Depth Ten",
+          version: { number: 2 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/200/Depth+Ten" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "300",
+          title: "Depth Eleven",
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/300/Depth+Eleven" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/200/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/200",
+      "https://selta.atlassian.net/wiki/api/v2/pages/300"
+    ]);
+    expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
+      { pageId: "100", parentId: null, depth: 0 },
+      { pageId: "200", parentId: "100", depth: 10 },
+      { pageId: "300", parentId: "200", depth: 11 }
+    ]);
+    expect(result.root.children.map((page) => page.pageId)).toEqual(["200"]);
+    expect(result.root.children[0].children.map((page) => page.pageId)).toEqual(["300"]);
+    expect(result.errors).toEqual([]);
+  });
+
   it("continues pulling other pages when a descendant page detail request fails", async () => {
     const { transport } = createSequencedTransport([
       {
