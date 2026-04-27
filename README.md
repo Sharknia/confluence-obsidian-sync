@@ -34,25 +34,28 @@ zip을 풀면 다음 폴더가 생겨야 합니다.
 
 Pull Tree 실행 후 결과 요약은 Obsidian Notice로 표시됩니다.
 `Open Sync Panel` 명령은 현재 프로젝트와 최근 Pull 리포트 요약을 Obsidian 패널로 표시합니다.
+`Force Pull Tree`는 로컬 변경사항 개수가 포함된 확인창 승인 후 로컬 수정 파일을 원격 본문으로 덮어씁니다.
+확인창을 취소하면 변경된 로컬 파일 목록을 `logs/latest.md`로 남기고 엽니다.
 
-상세 기록은 프로젝트 폴더와 같은 계층의 다음 파일에 남습니다.
+상세 기록은 vault 루트의 다음 파일에 남습니다.
 
 ```text
-<project-parent-folder>/Pull Reports/latest.md
+logs/latest.md
 ```
 
 예:
 
 ```text
-confluence/Pull Reports/latest.md
+logs/latest.md
 ```
 
 `latest.md`에는 다음 내용이 기록됩니다.
 
 - 추가, 갱신, 안전 삭제, 변경 없음 개수
-- 로컬 수정 스킵 파일 경로
+- 로컬 수정 스킵 파일 경로 링크
 - 스킵 사유
-- 안전 삭제 이동 경로
+- 안전 삭제 이동 경로 링크
+- Force Pull 강제 덮어쓰기 파일 경로 링크
 - 조회 실패와 변환 경고 개수
 
 로컬 수정 스킵 사유는 다음과 같습니다.
@@ -62,8 +65,8 @@ confluence/Pull Reports/latest.md
 - `duplicate-page-id`: 같은 Confluence pageId를 가진 로컬 Markdown 파일이 중복됨
 - `disappeared-local-change`: Confluence에서 사라진 페이지지만 로컬 수정이 있어 안전 삭제하지 않음
 
-Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `Pull Reports/latest.md`를 먼저 확인하세요.
-스킵, 안전 삭제, 조회 실패, 변환 경고가 있으면 Pull 후 이 파일이 자동으로 열립니다.
+Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `logs/latest.md`를 먼저 확인하세요.
+Pull Tree가 끝나면 최신 리포트 파일이 자동으로 열립니다.
 
 ## 개발
 

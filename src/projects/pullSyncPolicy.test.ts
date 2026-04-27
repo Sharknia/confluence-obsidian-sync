@@ -86,6 +86,25 @@ describe("createPullSyncPlan", () => {
     expect(plan.skippedLocalChanges.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
   });
 
+  it("force overwrites an existing page when the local body changed after the last pull", () => {
+    const remoteFile = createRemoteFile({ pageId: "100", vaultPath: "confluence/Root/Root.md", body: "Remote v2\n" });
+    const localFile = createLocalFile("confluence/Root/Root.md", "100", "Local draft\n", "Remote v1\n");
+
+    const plan = createPullSyncPlan(
+      {
+        projectRootPath: "confluence/Root",
+        safeDeleteRootPath: "confluence/Root/.confluence-sync/trash/2026-04-27T00-00-00-000Z",
+        remoteFiles: [remoteFile],
+        localFiles: [localFile],
+      },
+      { forceOverwriteLocalChanges: true }
+    );
+
+    expect(plan.filesToWrite).toEqual([{ ...remoteFile, vaultPath: "confluence/Root/Root.md", operation: "update" }]);
+    expect(plan.skippedLocalChanges).toEqual([]);
+    expect(plan.overwrittenLocalChanges.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
+  });
+
   it("moves disappeared remote pages to the safe delete folder", () => {
     const localFile = createLocalFile("confluence/Root/Old/Removed.md", "999", "Old body\n");
 

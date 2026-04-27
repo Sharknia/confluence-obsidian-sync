@@ -2,6 +2,7 @@ import type { SyncPanelState } from "./syncPanelState";
 
 export interface SyncPanelActions {
   onPullTree: () => void | Promise<void>;
+  onForcePullTree: () => void | Promise<void>;
   onPushCurrentPage: () => void | Promise<void>;
   onOpenRootLink: () => void | Promise<void>;
   onOpenLatestReport: () => void | Promise<void>;
@@ -64,7 +65,27 @@ export function renderSyncPanelContent(
   actionSectionEl.className = "confluence-sync-panel-actions";
   const actionStatusEl = appendTextElement(actionSectionEl, "p", "");
   actionStatusEl.setAttribute("aria-live", "polite");
-  appendPullButton(actionSectionEl, actions.onPullTree, !state.canRunProjectActions, actionStatusEl);
+  const actionButtons: HTMLButtonElement[] = [];
+  actionButtons.push(
+    appendPullButton(
+      actionSectionEl,
+      "Pull Tree",
+      actions.onPullTree,
+      !state.canRunProjectActions,
+      actionStatusEl,
+      actionButtons
+    )
+  );
+  actionButtons.push(
+    appendPullButton(
+      actionSectionEl,
+      "Force Pull Tree",
+      actions.onForcePullTree,
+      !state.canRunProjectActions,
+      actionStatusEl,
+      actionButtons
+    )
+  );
   containerEl.append(actionSectionEl);
 }
 
@@ -118,19 +139,21 @@ function appendButton(
 
 function appendPullButton(
   containerEl: HTMLElement,
+  label: string,
   onClick: () => void | Promise<void>,
   disabled: boolean,
-  statusEl: HTMLElement
+  statusEl: HTMLElement,
+  actionButtons: HTMLButtonElement[]
 ): HTMLButtonElement {
   const buttonEl = createElement(containerEl, "button");
-  buttonEl.textContent = "Pull Tree";
+  buttonEl.textContent = label;
   buttonEl.disabled = disabled;
   buttonEl.addEventListener("click", () => {
     if (buttonEl.disabled) {
       return;
     }
 
-    void runPullAction(buttonEl, statusEl, onClick);
+    void runPullAction(actionButtons, buttonEl, statusEl, label, onClick);
   });
   containerEl.append(buttonEl);
 
@@ -138,22 +161,30 @@ function appendPullButton(
 }
 
 async function runPullAction(
+  actionButtons: HTMLButtonElement[],
   buttonEl: HTMLButtonElement,
   statusEl: HTMLElement,
+  label: string,
   onClick: () => void | Promise<void>
 ): Promise<void> {
-  buttonEl.disabled = true;
-  buttonEl.textContent = "Pull 진행 중...";
-  statusEl.textContent = "Pull 진행 중입니다...";
+  setButtonsDisabled(actionButtons, true);
+  buttonEl.textContent = `${label} 진행 중...`;
+  statusEl.textContent = `${label} 진행 중입니다...`;
 
   try {
     await onClick();
-    statusEl.textContent = "Pull 완료";
+    statusEl.textContent = `${label} 완료`;
   } catch {
-    statusEl.textContent = "Pull 실패";
+    statusEl.textContent = `${label} 실패`;
   } finally {
-    buttonEl.disabled = false;
-    buttonEl.textContent = "Pull Tree";
+    setButtonsDisabled(actionButtons, false);
+    buttonEl.textContent = label;
+  }
+}
+
+function setButtonsDisabled(buttons: HTMLButtonElement[], disabled: boolean): void {
+  for (const button of buttons) {
+    button.disabled = disabled;
   }
 }
 

@@ -12,9 +12,9 @@ export interface PullReportSummary {
 }
 
 export function buildPullReportPath(projectRootPath: string): string {
-  const projectParentPath = getParentVaultPath(projectRootPath);
+  void projectRootPath;
 
-  return joinVaultPath(projectParentPath, "Pull Reports", "latest.md");
+  return joinVaultPath("logs", "latest.md");
 }
 
 export function parsePullReportMarkdown(markdown: string): PullReportSummary | null {
@@ -64,15 +64,6 @@ function readSectionLines(markdown: string, heading: string): string[] {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.startsWith("- ") && line !== "- 없음");
-}
-
-function getParentVaultPath(path: string): string {
-  const pathSegments = path
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-
-  return pathSegments.slice(0, -1).join("/");
 }
 
 function joinVaultPath(...segments: string[]): string {

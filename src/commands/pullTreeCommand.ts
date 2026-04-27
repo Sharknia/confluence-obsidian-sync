@@ -4,7 +4,7 @@ import {
   type ConfluenceRootContentTreeResult,
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
-import { buildPageMarkdownFiles, parsePageMarkdownMetadata } from "../projects/pageMarkdown";
+import { buildPageMarkdownFiles, calculateMarkdownBodyHash, parsePageMarkdownMetadata } from "../projects/pageMarkdown";
 import { buildPullReportPath } from "../projects/pullReport";
 import { createPullSyncPlan } from "../projects/pullSyncPolicy";
 import {
@@ -25,8 +25,16 @@ export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
   storage: ProjectStorageAdapter;
   fetchTree?: PullTreeFetcher;
+  mode?: "normal" | "force";
+  confirmForcePull?: (message: string) => boolean;
   showNotice: (message: string) => void;
   openReport?: (path: string) => Promise<void>;
+}
+
+const forcePullConfirmationMessage = "로컬의 변경사항이 모두 취소됩니다. 정말 실행하시겠습니까?";
+
+function buildForcePullConfirmationMessage(changedLocalFileCount: number): string {
+  return `${forcePullConfirmationMessage}\n\n로컬 변경사항: ${changedLocalFileCount}건`;
 }
 
 const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType, rootContentId) => {
@@ -39,6 +47,8 @@ export async function runPullTreeCommand({
   settings,
   storage,
   fetchTree = defaultPullTreeFetcher,
+  mode = "normal",
+  confirmForcePull,
   showNotice,
   openReport
 }: RunPullTreeCommandInput): Promise<void> {
@@ -61,6 +71,53 @@ export async function runPullTreeCommand({
   }
 
   try {
+    const safeDeleteRootPath = buildSafeDeleteRootPath(
+      currentProject.localFolderPath,
+      settings.safeDeleteFolder,
+      new Date()
+    );
+    let localMarkdownFilesResult: Awaited<ReturnType<typeof listProjectMarkdownFiles>> | null = null;
+
+    try {
+      if (mode === "force") {
+        localMarkdownFilesResult = await listProjectMarkdownFiles(
+          storage,
+          currentProject.localFolderPath,
+          removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
+        );
+
+        if (!localMarkdownFilesResult.ok) {
+          showNotice(localMarkdownFilesResult.message);
+          return;
+        }
+
+        const changedLocalFiles = collectChangedLocalMarkdownFiles(localMarkdownFilesResult.files);
+        const shouldContinue =
+          confirmForcePull?.(buildForcePullConfirmationMessage(changedLocalFiles.length)) ?? true;
+
+        if (!shouldContinue) {
+          const reportPath = await writeForcePullCancelReport(storage, currentProject.localFolderPath, {
+            pulledAt: new Date(),
+            changedLocalFiles
+          });
+
+          if (openReport !== undefined) {
+            try {
+              await openReport(reportPath);
+            } catch {
+              showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`);
+            }
+          }
+
+          showNotice("Force Pull을 취소했습니다. 변경된 로컬 파일 목록을 리포트로 남겼습니다.");
+          return;
+        }
+      }
+    } catch {
+      showNotice("Markdown 파일을 저장할 수 없습니다.");
+      return;
+    }
+
     const result = await fetchTree(settings, currentProject.rootContentType, currentProject.rootContentId);
 
     if (!result.ok) {
@@ -74,22 +131,20 @@ export async function runPullTreeCommand({
     let conversionWarningCount = 0;
 
     try {
-      const safeDeleteRootPath = buildSafeDeleteRootPath(
-        currentProject.localFolderPath,
-        settings.safeDeleteFolder,
-        new Date()
-      );
-      const localMarkdownFiles = await listProjectMarkdownFiles(
-        storage,
-        currentProject.localFolderPath,
-        removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
-      );
+      if (localMarkdownFilesResult === null) {
+        localMarkdownFilesResult = await listProjectMarkdownFiles(
+          storage,
+          currentProject.localFolderPath,
+          removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
+        );
+      }
 
-      if (!localMarkdownFiles.ok) {
-        showNotice(localMarkdownFiles.message);
+      if (!localMarkdownFilesResult.ok) {
+        showNotice(localMarkdownFilesResult.message);
         return;
       }
 
+      const localMarkdownFiles = localMarkdownFilesResult;
       markdownFiles = await buildPageMarkdownFiles({
         projectRootPath: currentProject.localFolderPath,
         root: result.root,
@@ -99,12 +154,16 @@ export async function runPullTreeCommand({
         readExistingFile: (path) => storage.read(path)
       });
 
-      syncPlan = createPullSyncPlan({
-        projectRootPath: currentProject.localFolderPath,
-        safeDeleteRootPath,
-        remoteFiles: markdownFiles,
-        localFiles: localMarkdownFiles.files
-      });
+      syncPlan = createPullSyncPlan(
+        {
+          projectRootPath: currentProject.localFolderPath,
+          safeDeleteRootPath,
+          remoteFiles: markdownFiles,
+          localFiles: localMarkdownFiles.files
+        },
+        { forceOverwriteLocalChanges: mode === "force" }
+      );
+
       writeResult = await applyPullSyncPlan(storage, syncPlan);
       conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
 
@@ -119,7 +178,7 @@ export async function runPullTreeCommand({
           conversionWarningCount
         });
 
-        if (openReport !== undefined && hasPullReportIssue(writeResult, result.errors.length, conversionWarningCount)) {
+        if (openReport !== undefined) {
           try {
             await openReport(reportPath);
           } catch {
@@ -140,7 +199,10 @@ export async function runPullTreeCommand({
     const createCount = syncPlan.filesToWrite.filter((file) => file.operation === "create").length;
     const updateCount = syncPlan.filesToWrite.filter((file) => file.operation === "update").length;
     showNotice(
-      `Pull 완료: 추가 ${createCount}개, 갱신 ${updateCount}개, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
+      `${mode === "force" ? "Force Pull" : "Pull"} 완료: 추가 ${createCount}개, 갱신 ${updateCount}개${buildForceOverwriteNoticePart(
+        mode,
+        syncPlan.overwrittenLocalChanges.length
+      )}, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
         result.errors.length,
         conversionWarningCount
       )}`
@@ -151,6 +213,10 @@ export async function runPullTreeCommand({
     const message = error instanceof Error ? error.message : "Confluence 페이지 트리 조회 중 알 수 없는 오류가 발생했습니다.";
     showNotice(message);
   }
+}
+
+function buildForceOverwriteNoticePart(mode: "normal" | "force", overwrittenCount: number): string {
+  return mode === "force" ? `, 강제 덮어쓰기 ${overwrittenCount}개` : "";
 }
 
 function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCount: number): string {
@@ -165,19 +231,6 @@ function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCo
   }
 
   return suffixes.length > 0 ? `, ${suffixes.join(", ")}` : "";
-}
-
-function hasPullReportIssue(
-  writeResult: Extract<PullSyncApplyResult, { ok: true }>,
-  fetchFailureCount: number,
-  conversionWarningCount: number
-): boolean {
-  return (
-    writeResult.safeDeletedFileCount > 0 ||
-    writeResult.skippedLocalChangeCount > 0 ||
-    fetchFailureCount > 0 ||
-    conversionWarningCount > 0
-  );
 }
 
 function toSettingsFieldName(field: RequiredConfluenceConnectionField): string {
@@ -237,6 +290,17 @@ interface PullReportInput {
   conversionWarningCount: number;
 }
 
+interface ForcePullCancelReportInput {
+  pulledAt: Date;
+  changedLocalFiles: ChangedLocalMarkdownFile[];
+}
+
+interface ChangedLocalMarkdownFile {
+  vaultPath: string;
+  pageId: string;
+  skipReason: "local-change";
+}
+
 async function writePullReport(
   storage: ProjectStorageAdapter,
   projectRootPath: string,
@@ -250,6 +314,23 @@ async function writePullReport(
   }
 
   await storage.write(reportPath, buildPullReportMarkdown(reportInput));
+
+  return reportPath;
+}
+
+async function writeForcePullCancelReport(
+  storage: ProjectStorageAdapter,
+  projectRootPath: string,
+  reportInput: ForcePullCancelReportInput
+): Promise<string> {
+  const reportPath = buildPullReportPath(projectRootPath);
+  const reportFolderPath = reportPath.split("/").slice(0, -1).join("/");
+
+  if (!(await storage.exists(reportFolderPath))) {
+    await storage.mkdir(reportFolderPath);
+  }
+
+  await storage.write(reportPath, buildForcePullCancelReportMarkdown(reportInput));
 
   return reportPath;
 }
@@ -278,10 +359,52 @@ function buildPullReportMarkdown(input: PullReportInput): string {
     "",
     "## 로컬 수정 스킵",
     ...formatSkippedFiles(input.syncPlan.skippedLocalChanges),
+    "",
+    "## 강제 덮어쓰기",
+    ...formatSkippedFiles(input.syncPlan.overwrittenLocalChanges),
     ""
   ];
 
   return `${lines.join("\n")}\n`;
+}
+
+function buildForcePullCancelReportMarkdown(input: ForcePullCancelReportInput): string {
+  const lines = [
+    "# Force Pull 취소 리포트",
+    "",
+    `- 실행 시각: ${input.pulledAt.toISOString()}`,
+    `- 변경된 로컬 파일: ${input.changedLocalFiles.length}개`,
+    "",
+    "## 변경된 로컬 파일",
+    ...formatChangedLocalFiles(input.changedLocalFiles),
+    ""
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function collectChangedLocalMarkdownFiles(
+  localMarkdownFiles: Array<{ vaultPath: string; content: string }>
+): ChangedLocalMarkdownFile[] {
+  const changedLocalFiles: ChangedLocalMarkdownFile[] = [];
+
+  for (const file of localMarkdownFiles) {
+    const metadata = parsePageMarkdownMetadata(file.content);
+
+    if (metadata === null || metadata.contentHash === null) {
+      continue;
+    }
+
+    if (calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash) {
+      changedLocalFiles.push({
+        vaultPath: file.vaultPath,
+        pageId: metadata.pageId,
+        skipReason: "local-change"
+      });
+    }
+  }
+
+  return changedLocalFiles;
 }
 
 function formatWrittenFiles(files: ReturnType<typeof createPullSyncPlan>["filesToWrite"]): string[] {
@@ -289,7 +412,7 @@ function formatWrittenFiles(files: ReturnType<typeof createPullSyncPlan>["filesT
     return ["- 없음"];
   }
 
-  return files.map((file) => `- \`${file.vaultPath}\` pageId=${file.pageId}`);
+  return files.map((file) => `- ${formatVaultPathLink(file.vaultPath)} pageId=${file.pageId}`);
 }
 
 function formatSafeDeletedFiles(files: ReturnType<typeof createPullSyncPlan>["filesToMoveToSafeDelete"]): string[] {
@@ -297,7 +420,7 @@ function formatSafeDeletedFiles(files: ReturnType<typeof createPullSyncPlan>["fi
     return ["- 없음"];
   }
 
-  return files.map((file) => `- \`${file.fromPath}\` -> \`${file.toPath}\``);
+  return files.map((file) => `- ${formatVaultPathLink(file.fromPath)} -> ${formatVaultPathLink(file.toPath)}`);
 }
 
 function formatSkippedFiles(files: ReturnType<typeof createPullSyncPlan>["skippedLocalChanges"]): string[] {
@@ -305,5 +428,19 @@ function formatSkippedFiles(files: ReturnType<typeof createPullSyncPlan>["skippe
     return ["- 없음"];
   }
 
-  return files.map((file) => `- \`${file.vaultPath}\` pageId=${file.pageId} reason=${file.skipReason ?? "unknown"}`);
+  return files.map(
+    (file) => `- ${formatVaultPathLink(file.vaultPath)} pageId=${file.pageId} reason=${file.skipReason ?? "unknown"}`
+  );
+}
+
+function formatChangedLocalFiles(files: ChangedLocalMarkdownFile[]): string[] {
+  if (files.length === 0) {
+    return ["- 없음"];
+  }
+
+  return files.map((file) => `- ${formatVaultPathLink(file.vaultPath)} pageId=${file.pageId} reason=${file.skipReason}`);
+}
+
+function formatVaultPathLink(vaultPath: string): string {
+  return `[[${vaultPath}]]`;
 }

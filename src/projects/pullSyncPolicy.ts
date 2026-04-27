@@ -36,6 +36,7 @@ export interface PullSyncPlan {
   filesToWrite: PageMarkdownFileWriteOperation[];
   filesToMoveToSafeDelete: SafeDeleteMoveOperation[];
   skippedLocalChanges: LocalMarkdownPageFile[];
+  overwrittenLocalChanges: LocalMarkdownPageFile[];
   unchangedFileCount: number;
 }
 
@@ -46,7 +47,14 @@ export interface CreatePullSyncPlanInput {
   localFiles: LocalMarkdownFileSnapshot[];
 }
 
-export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan {
+export interface CreatePullSyncPlanOptions {
+  forceOverwriteLocalChanges?: boolean;
+}
+
+export function createPullSyncPlan(
+  input: CreatePullSyncPlanInput,
+  options: CreatePullSyncPlanOptions = {}
+): PullSyncPlan {
   const localPageFiles = input.localFiles
     .map(toLocalMarkdownPageFile)
     .filter((file): file is LocalMarkdownPageFile => file !== null)
@@ -56,6 +64,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
   const filesToWrite: PageMarkdownFileWriteOperation[] = [];
   const filesToMoveToSafeDelete: SafeDeleteMoveOperation[] = [];
   const skippedLocalChanges: LocalMarkdownPageFile[] = [];
+  const overwrittenLocalChanges: LocalMarkdownPageFile[] = [];
   let unchangedFileCount = 0;
 
   for (const remoteFile of input.remoteFiles) {
@@ -70,7 +79,15 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     }
 
     if (!canReplaceLocalFile(localFile, remoteFile)) {
-      skippedLocalChanges.push(withSkipReason(localFile, getReplacementSkipReason(localFile)));
+      const skipReason = getReplacementSkipReason(localFile);
+
+      if (options.forceOverwriteLocalChanges === true) {
+        overwrittenLocalChanges.push(withSkipReason(localFile, skipReason));
+        filesToWrite.push({ ...remoteFile, vaultPath: localFile.vaultPath, operation: "update" });
+        continue;
+      }
+
+      skippedLocalChanges.push(withSkipReason(localFile, skipReason));
       continue;
     }
 
@@ -102,6 +119,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     filesToWrite,
     filesToMoveToSafeDelete,
     skippedLocalChanges,
+    overwrittenLocalChanges,
     unchangedFileCount,
   };
 }

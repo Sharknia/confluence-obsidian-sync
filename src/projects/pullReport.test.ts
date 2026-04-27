@@ -3,12 +3,12 @@ import { buildPullReportPath, parsePullReportMarkdown } from "./pullReport";
 
 describe("pullReport", () => {
   it("builds latest report path next to the project folder", () => {
-    expect(buildPullReportPath("confluence/기획 문서")).toBe("confluence/Pull Reports/latest.md");
-    expect(buildPullReportPath("/confluence/기획 문서/")).toBe("confluence/Pull Reports/latest.md");
+    expect(buildPullReportPath("confluence/기획 문서")).toBe("logs/latest.md");
+    expect(buildPullReportPath("/confluence/기획 문서/")).toBe("logs/latest.md");
   });
 
   it("builds latest report path at vault root for a top-level project folder", () => {
-    expect(buildPullReportPath("기획 문서")).toBe("Pull Reports/latest.md");
+    expect(buildPullReportPath("기획 문서")).toBe("logs/latest.md");
   });
 
   it("parses latest Pull report summary and issue lines", () => {
@@ -30,10 +30,10 @@ describe("pullReport", () => {
 - \`confluence/기획 문서/A.md\` pageId=100
 
 ## 안전 삭제
-- \`confluence/기획 문서/Old.md\` -> \`confluence/기획 문서/.confluence-sync/trash/2026/Old.md\`
+- [[confluence/기획 문서/Old.md]] -> [[confluence/기획 문서/.confluence-sync/trash/2026/Old.md]]
 
 ## 로컬 수정 스킵
-- \`confluence/기획 문서/Draft.md\` pageId=200 reason=local-change
+- [[confluence/기획 문서/Draft.md]] pageId=200 reason=local-change
 `);
 
     expect(summary).toEqual({
@@ -46,9 +46,9 @@ describe("pullReport", () => {
       fetchFailureCount: 4,
       conversionWarningCount: 5,
       safeDeleteLines: [
-        "- `confluence/기획 문서/Old.md` -> `confluence/기획 문서/.confluence-sync/trash/2026/Old.md`"
+        "- [[confluence/기획 문서/Old.md]] -> [[confluence/기획 문서/.confluence-sync/trash/2026/Old.md]]"
       ],
-      skippedLocalChangeLines: ["- `confluence/기획 문서/Draft.md` pageId=200 reason=local-change"]
+      skippedLocalChangeLines: ["- [[confluence/기획 문서/Draft.md]] pageId=200 reason=local-change"]
     });
   });
 

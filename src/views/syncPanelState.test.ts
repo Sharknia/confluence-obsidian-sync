@@ -64,7 +64,7 @@ describe("buildSyncPanelState", () => {
     const state = await buildSyncPanelState({
       settings: createSettings(),
       storage: createStorage({
-        "confluence/Pull Reports/latest.md": `# Pull Report
+        "logs/latest.md": `# Pull Report
 
 - 실행 시각: 2026-04-27T07:31:08.187Z
 - 추가: 1개
@@ -90,7 +90,7 @@ describe("buildSyncPanelState", () => {
       localFolderPath: "confluence/기획 문서",
       rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
       rootContentLabel: "루트 페이지",
-      latestReportPath: "confluence/Pull Reports/latest.md",
+      latestReportPath: "logs/latest.md",
       lastPullText: "2026-04-27T07:31:08.187Z",
       recentIssueText: "로컬 수정 스킵 1개, 변환 경고 3개",
       recentIssueLines: ["- `confluence/기획 문서/Draft.md` pageId=200 reason=local-change"],
@@ -106,11 +106,11 @@ describe("buildSyncPanelState", () => {
 
     expect(state.lastPullText).toBe("Pull 기록 없음");
     expect(state.recentIssueText).toBe("최근 오류 없음");
-    expect(state.latestReportPath).toBe("confluence/Pull Reports/latest.md");
+    expect(state.latestReportPath).toBe("logs/latest.md");
   });
 
   it("shows report read failure as recent issue", async () => {
-    const storage = createStorage({ "confluence/Pull Reports/latest.md": "# Pull Report" });
+    const storage = createStorage({ "logs/latest.md": "# Pull Report" });
     storage.read = () => Promise.reject(new Error("adapter failed"));
 
     const state = await buildSyncPanelState({ settings: createSettings(), storage });

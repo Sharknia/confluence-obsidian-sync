@@ -1,5 +1,6 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin, type TFile } from "obsidian";
 import {
+  FORCE_PULL_TREE_COMMAND_ID,
   OPEN_SYNC_PANEL_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
   PUSH_CURRENT_PAGE_COMMAND_ID
@@ -17,6 +18,7 @@ import { chooseSyncPanelLeaf } from "./views/syncPanelIntegration";
 import { registerSyncPanelRibbonIcon } from "./views/syncPanelRibbon";
 import { buildSyncPanelState } from "./views/syncPanelState";
 import { SYNC_PANEL_VIEW_TYPE, SyncPanelView } from "./views/syncPanelView";
+import { openVaultMarkdownFileFromObsidian } from "./views/openVaultMarkdownFile";
 
 export default class ConfluenceObsidianSyncPlugin extends Plugin {
   settings: ConfluenceSyncSettings = { ...DEFAULT_CONFLUENCE_SYNC_SETTINGS };
@@ -35,6 +37,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
             }),
           actions: {
             onPullTree: () => this.runPullTree(),
+            onForcePullTree: () => this.runForcePullTree(),
             onPushCurrentPage: () => this.pushCurrentPage(),
             onOpenRootLink: () => this.openCurrentProjectRootLink(),
             onOpenLatestReport: () => this.openCurrentProjectLatestReport()
@@ -70,6 +73,14 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       name: "Pull Tree",
       callback: () => {
         void this.runPullTree();
+      }
+    });
+
+    this.addCommand({
+      id: FORCE_PULL_TREE_COMMAND_ID,
+      name: "Force Pull Tree",
+      callback: () => {
+        void this.runForcePullTree();
       }
     });
 
@@ -118,6 +129,19 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     await this.refreshSyncPanelViews();
   }
 
+  private async runForcePullTree(): Promise<void> {
+    await runPullTreeCommand({
+      settings: this.settings,
+      storage: createVaultStorageAdapter(this),
+      mode: "force",
+      confirmForcePull: (message) => window.confirm(message),
+      showNotice: (message) => new Notice(message),
+      openReport: (path) => openVaultMarkdownFile(this, path)
+    });
+
+    await this.refreshSyncPanelViews();
+  }
+
   private pushCurrentPage(): void {
     new Notice("Confluence Push Current Page는 단일 문서 업로드 Epic에서 구현됩니다.");
   }
@@ -157,18 +181,22 @@ function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): Projec
 }
 
 async function openVaultMarkdownFile(plugin: ConfluenceObsidianSyncPlugin, path: string): Promise<void> {
-  for (let attemptCount = 0; attemptCount < 5; attemptCount += 1) {
-    const file = plugin.app.vault.getAbstractFileByPath(path);
+  await openVaultMarkdownFileFromObsidian<TFile>(
+    {
+      getFileByPath: (filePath) => plugin.app.vault.getFileByPath(filePath),
+      fileExists: (filePath) => plugin.app.vault.adapter.exists(filePath),
+      openFileInNewTab: async (file) => {
+        const leaf = plugin.app.workspace.getLeaf("tab");
 
-    if (file instanceof TFile) {
-      await plugin.app.workspace.getLeaf(false).openFile(file);
-      return;
-    }
-
-    await delay(100);
-  }
-
-  new Notice(`Pull 리포트가 생성되었습니다: ${path}`);
+        await leaf.openFile(file, { active: true });
+        await plugin.app.workspace.revealLeaf(leaf);
+      },
+      openPathInNewTab: (filePath) => plugin.app.workspace.openLinkText(filePath, "", "tab", { active: true }),
+      showNotice: (message) => new Notice(message),
+      wait: delay
+    },
+    path
+  );
 }
 
 function delay(milliseconds: number): Promise<void> {
