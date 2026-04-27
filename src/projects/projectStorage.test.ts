@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ConfluenceProjectManifest, ProjectPaths } from "./projectManifest";
 import type { PageMarkdownFile } from "./pageMarkdown";
-import { writeMarkdownPages, writeProjectManifest, type ProjectStorageAdapter } from "./projectStorage";
+import type { PullSyncPlan } from "./pullSyncPolicy";
+import {
+  applyPullSyncPlan,
+  listProjectMarkdownFiles,
+  writeMarkdownPages,
+  writeProjectManifest,
+  type ProjectStorageAdapter,
+} from "./projectStorage";
 
 function createProjectPaths(): ProjectPaths {
   return {
@@ -32,8 +39,11 @@ function createManifest(): ConfluenceProjectManifest {
 interface StorageMockOptions {
   existingPaths?: Set<string>;
   existingFiles?: Map<string, string>;
+  listedFolders?: Map<string, { files: string[]; folders: string[] }>;
+  failOnListPath?: string;
   failOnMkdirPath?: string;
   failOnWritePath?: string;
+  failOnRenamePath?: string;
   onExists?: (path: string, callCount: number) => boolean;
 }
 
@@ -84,6 +94,33 @@ function createStorageMock(options: StorageMockOptions = {}) {
 
       existingPaths.add(path);
       existingFiles.set(path, data);
+      return Promise.resolve();
+    },
+    list(path: string): Promise<{ files: string[]; folders: string[] }> {
+      calls.push(`list:${path}`);
+
+      if (options.failOnListPath === path) {
+        return Promise.reject(new Error(`list failed: ${path}`));
+      }
+
+      return Promise.resolve(options.listedFolders?.get(path) ?? { files: [], folders: [] });
+    },
+    rename(fromPath: string, toPath: string): Promise<void> {
+      calls.push(`rename:${fromPath}:${toPath}`);
+
+      if (options.failOnRenamePath === fromPath) {
+        return Promise.reject(new Error(`rename failed: ${fromPath}`));
+      }
+
+      const content = existingFiles.get(fromPath);
+      existingPaths.delete(fromPath);
+      existingPaths.add(toPath);
+
+      if (content !== undefined) {
+        existingFiles.delete(fromPath);
+        existingFiles.set(toPath, content);
+      }
+
       return Promise.resolve();
     }
   };
@@ -410,5 +447,159 @@ describe("writeMarkdownPages", () => {
       "mkdir:confluence/Root",
       "write:confluence/Root/Root.md:# Root\n"
     ]);
+  });
+});
+
+describe("listProjectMarkdownFiles", () => {
+  it("recursively lists markdown files and skips the safe delete folder", async () => {
+    const { storage } = createStorageMock({
+      existingFiles: new Map([
+        ["confluence/Root/Root.md", "root"],
+        ["confluence/Root/Folder/Child.md", "child"],
+        ["confluence/Root/.confluence-sync/trash/old.md", "old"],
+      ]),
+      listedFolders: new Map([
+        [
+          "confluence/Root",
+          {
+            files: ["confluence/Root/Root.md", "confluence/Root/notes.txt"],
+            folders: ["confluence/Root/Folder", "confluence/Root/.confluence-sync"],
+          },
+        ],
+        [
+          "confluence/Root/Folder",
+          {
+            files: ["confluence/Root/Folder/Child.md"],
+            folders: [],
+          },
+        ],
+        [
+          "confluence/Root/.confluence-sync",
+          {
+            files: [],
+            folders: ["confluence/Root/.confluence-sync/trash"],
+          },
+        ],
+      ]),
+    });
+
+    const result = await listProjectMarkdownFiles(
+      storage,
+      "confluence/Root",
+      "confluence/Root/.confluence-sync/trash"
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      files: [
+        { vaultPath: "confluence/Root/Root.md", content: "root" },
+        { vaultPath: "confluence/Root/Folder/Child.md", content: "child" },
+      ],
+    });
+  });
+
+  it("returns storage-error when a folder cannot be listed", async () => {
+    const { storage } = createStorageMock({
+      failOnListPath: "confluence/Root",
+    });
+
+    await expect(
+      listProjectMarkdownFiles(storage, "confluence/Root", "confluence/Root/.confluence-sync/trash")
+    ).resolves.toEqual({
+      ok: false,
+      reason: "storage-error",
+      message: "로컬 Markdown 파일 목록을 읽을 수 없습니다.",
+    });
+  });
+});
+
+describe("applyPullSyncPlan", () => {
+  it("writes files and moves safe delete files after creating parent folders", async () => {
+    const plan: PullSyncPlan = {
+      filesToWrite: [
+        {
+          pageId: "100",
+          title: "Root",
+          vaultPath: "confluence/Root/Root.md",
+          content: "# Root\n",
+          warnings: [],
+          operation: "update",
+        },
+      ],
+      filesToMoveToSafeDelete: [
+        {
+          fromPath: "confluence/Root/Old/Removed.md",
+          toPath: "confluence/Root/.confluence-sync/trash/2026/Old/Removed.md",
+        },
+      ],
+      skippedLocalChanges: [],
+      unchangedFileCount: 2,
+    };
+    const { calls, storage } = createStorageMock();
+
+    const result = await applyPullSyncPlan(storage, plan);
+
+    expect(result).toEqual({
+      ok: true,
+      writtenFileCount: 1,
+      safeDeletedFileCount: 1,
+      skippedLocalChangeCount: 0,
+      unchangedFileCount: 2,
+    });
+    expect(calls).toContain("write:confluence/Root/Root.md:# Root\n");
+    expect(calls).toContain("rename:confluence/Root/Old/Removed.md:confluence/Root/.confluence-sync/trash/2026/Old/Removed.md");
+  });
+
+  it("returns storage-error when a safe delete move fails", async () => {
+    const plan: PullSyncPlan = {
+      filesToWrite: [],
+      filesToMoveToSafeDelete: [
+        {
+          fromPath: "confluence/Root/Removed.md",
+          toPath: "confluence/Root/.confluence-sync/trash/2026/Removed.md",
+        },
+      ],
+      skippedLocalChanges: [],
+      unchangedFileCount: 0,
+    };
+    const { storage } = createStorageMock({
+      failOnRenamePath: "confluence/Root/Removed.md",
+    });
+
+    await expect(applyPullSyncPlan(storage, plan)).resolves.toEqual({
+      ok: false,
+      reason: "storage-error",
+      message: "Pull 결과를 로컬 파일에 적용할 수 없습니다.",
+    });
+  });
+
+  it("adds a numeric suffix when a safe delete destination already exists", async () => {
+    const plan: PullSyncPlan = {
+      filesToWrite: [],
+      filesToMoveToSafeDelete: [
+        {
+          fromPath: "confluence/Root/Removed.md",
+          toPath: "confluence/Root/.confluence-sync/trash/2026/Removed.md",
+        },
+      ],
+      skippedLocalChanges: [],
+      unchangedFileCount: 0,
+    };
+    const { calls, storage } = createStorageMock({
+      existingPaths: new Set(["confluence/Root/.confluence-sync/trash/2026/Removed.md"]),
+    });
+
+    const result = await applyPullSyncPlan(storage, plan);
+
+    expect(result).toEqual({
+      ok: true,
+      writtenFileCount: 0,
+      safeDeletedFileCount: 1,
+      skippedLocalChangeCount: 0,
+      unchangedFileCount: 0,
+    });
+    expect(calls).toContain(
+      "rename:confluence/Root/Removed.md:confluence/Root/.confluence-sync/trash/2026/Removed (1).md"
+    );
   });
 });

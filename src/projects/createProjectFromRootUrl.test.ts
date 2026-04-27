@@ -87,6 +87,14 @@ function createStorageMock(options: {
         existingPaths.add(path);
         existingFiles.set(path, data);
         return Promise.resolve();
+      },
+      list(path: string): Promise<{ files: string[]; folders: string[] }> {
+        calls.push(`list:${path}`);
+        return Promise.resolve({ files: [], folders: [] });
+      },
+      rename(fromPath: string, toPath: string): Promise<void> {
+        calls.push(`rename:${fromPath}:${toPath}`);
+        return Promise.resolve();
       }
     }
   };

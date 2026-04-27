@@ -1,4 +1,5 @@
 import type { PageMarkdownFile } from "./pageMarkdown";
+import type { PullSyncPlan } from "./pullSyncPolicy";
 import type { ConfluenceProjectManifest, ProjectPaths, RootContentType } from "./projectManifest";
 
 export interface ProjectStorageAdapter {
@@ -6,6 +7,8 @@ export interface ProjectStorageAdapter {
   mkdir(path: string): Promise<void>;
   read(path: string): Promise<string>;
   write(path: string, data: string): Promise<void>;
+  list(path: string): Promise<{ files: string[]; folders: string[] }>;
+  rename(fromPath: string, toPath: string): Promise<void>;
 }
 
 export interface WriteProjectManifestSuccess {
@@ -33,6 +36,35 @@ export interface WriteMarkdownPagesFailure {
 }
 
 export type WriteMarkdownPagesResult = WriteMarkdownPagesSuccess | WriteMarkdownPagesFailure;
+
+export interface PullSyncApplySuccess {
+  ok: true;
+  writtenFileCount: number;
+  safeDeletedFileCount: number;
+  skippedLocalChangeCount: number;
+  unchangedFileCount: number;
+}
+
+export interface PullSyncApplyFailure {
+  ok: false;
+  reason: "storage-error";
+  message: string;
+}
+
+export type PullSyncApplyResult = PullSyncApplySuccess | PullSyncApplyFailure;
+
+export interface ListProjectMarkdownFilesSuccess {
+  ok: true;
+  files: Array<{ vaultPath: string; content: string }>;
+}
+
+export interface ListProjectMarkdownFilesFailure {
+  ok: false;
+  reason: "storage-error";
+  message: string;
+}
+
+export type ListProjectMarkdownFilesResult = ListProjectMarkdownFilesSuccess | ListProjectMarkdownFilesFailure;
 
 function buildManifestAlreadyExistsFailure(): WriteProjectManifestFailure {
   return {
@@ -109,6 +141,85 @@ export async function writeMarkdownPages(
     };
   } catch {
     return buildMarkdownStorageErrorFailure();
+  }
+}
+
+export async function listProjectMarkdownFiles(
+  storage: ProjectStorageAdapter,
+  projectRootPath: string,
+  safeDeleteRootPath: string
+): Promise<ListProjectMarkdownFilesResult> {
+  const markdownFiles: Array<{ vaultPath: string; content: string }> = [];
+
+  async function visitFolder(folderPath: string): Promise<void> {
+    if (isSameOrChildPath(folderPath, safeDeleteRootPath)) {
+      return;
+    }
+
+    const listedFiles = await storage.list(folderPath);
+
+    for (const filePath of listedFiles.files) {
+      if (!filePath.endsWith(".md") || isSameOrChildPath(filePath, safeDeleteRootPath)) {
+        continue;
+      }
+
+      markdownFiles.push({
+        vaultPath: filePath,
+        content: await storage.read(filePath)
+      });
+    }
+
+    for (const childFolderPath of listedFiles.folders) {
+      await visitFolder(childFolderPath);
+    }
+  }
+
+  try {
+    await visitFolder(projectRootPath);
+
+    return {
+      ok: true,
+      files: markdownFiles
+    };
+  } catch {
+    return {
+      ok: false,
+      reason: "storage-error",
+      message: "로컬 Markdown 파일 목록을 읽을 수 없습니다."
+    };
+  }
+}
+
+export async function applyPullSyncPlan(
+  storage: ProjectStorageAdapter,
+  plan: PullSyncPlan
+): Promise<PullSyncApplyResult> {
+  try {
+    const writeResult = await writeMarkdownPages(storage, plan.filesToWrite);
+
+    if (!writeResult.ok) {
+      return buildPullSyncApplyStorageErrorFailure();
+    }
+
+    for (const moveOperation of plan.filesToMoveToSafeDelete) {
+      const availableToPath = await createAvailableMoveDestinationPath(storage, moveOperation.toPath);
+
+      for (const parentFolderPath of buildParentFolderPaths(availableToPath)) {
+        await ensureFolderExists(storage, parentFolderPath);
+      }
+
+      await storage.rename(moveOperation.fromPath, availableToPath);
+    }
+
+    return {
+      ok: true,
+      writtenFileCount: plan.filesToWrite.length,
+      safeDeletedFileCount: plan.filesToMoveToSafeDelete.length,
+      skippedLocalChangeCount: plan.skippedLocalChanges.length,
+      unchangedFileCount: plan.unchangedFileCount
+    };
+  } catch {
+    return buildPullSyncApplyStorageErrorFailure();
   }
 }
 
@@ -227,4 +338,45 @@ function readExistingRootIdentity(
   }
 
   return null;
+}
+
+function buildPullSyncApplyStorageErrorFailure(): PullSyncApplyFailure {
+  return {
+    ok: false,
+    reason: "storage-error",
+    message: "Pull 결과를 로컬 파일에 적용할 수 없습니다."
+  };
+}
+
+function isSameOrChildPath(path: string, parentPath: string): boolean {
+  const normalizedPath = path.replace(/\/+$/u, "");
+  const normalizedParentPath = parentPath.replace(/\/+$/u, "");
+
+  return normalizedPath === normalizedParentPath || normalizedPath.startsWith(`${normalizedParentPath}/`);
+}
+
+async function createAvailableMoveDestinationPath(
+  storage: ProjectStorageAdapter,
+  requestedPath: string
+): Promise<string> {
+  if (!(await storage.exists(requestedPath))) {
+    return requestedPath;
+  }
+
+  const extensionIndex = requestedPath.toLocaleLowerCase("en-US").endsWith(".md")
+    ? requestedPath.length - ".md".length
+    : requestedPath.length;
+  const basePath = requestedPath.slice(0, extensionIndex);
+  const extension = requestedPath.slice(extensionIndex);
+  let collisionIndex = 1;
+
+  while (true) {
+    const candidatePath = `${basePath} (${collisionIndex})${extension}`;
+
+    if (!(await storage.exists(candidatePath))) {
+      return candidatePath;
+    }
+
+    collisionIndex += 1;
+  }
 }
