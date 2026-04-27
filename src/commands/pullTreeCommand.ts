@@ -5,6 +5,7 @@ import {
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
 import { buildPageMarkdownFiles, parsePageMarkdownMetadata } from "../projects/pageMarkdown";
+import { buildPullReportPath } from "../projects/pullReport";
 import { createPullSyncPlan } from "../projects/pullSyncPolicy";
 import {
   applyPullSyncPlan,
@@ -241,8 +242,8 @@ async function writePullReport(
   projectRootPath: string,
   reportInput: PullReportInput
 ): Promise<string> {
-  const reportFolderPath = joinVaultPath(getParentVaultPath(projectRootPath), "Pull Reports");
-  const reportPath = joinVaultPath(reportFolderPath, "latest.md");
+  const reportPath = buildPullReportPath(projectRootPath);
+  const reportFolderPath = reportPath.split("/").slice(0, -1).join("/");
 
   if (!(await storage.exists(reportFolderPath))) {
     await storage.mkdir(reportFolderPath);
@@ -251,15 +252,6 @@ async function writePullReport(
   await storage.write(reportPath, buildPullReportMarkdown(reportInput));
 
   return reportPath;
-}
-
-function getParentVaultPath(path: string): string {
-  const pathSegments = path
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-
-  return pathSegments.slice(0, -1).join("/");
 }
 
 function buildPullReportMarkdown(input: PullReportInput): string {
