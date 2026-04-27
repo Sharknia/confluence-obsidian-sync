@@ -10,9 +10,11 @@
     "build": "node esbuild.config.mjs && node scripts/copy-plugin-assets.mjs",
     "lint": "eslint .",
     "test": "vitest run",
+    "package:plugin": "pnpm run build && node scripts/package-plugin.mjs",
     "prepare:current-vault": "pnpm run build && node scripts/prepare-current-vault.mjs",
     "prepare:vault": "pnpm run build && node scripts/prepare-vault-template.mjs",
-    "verify": "pnpm run lint && pnpm run test && pnpm run build"
+    "verify": "pnpm run lint && pnpm run test && pnpm run build",
+    "release:local": "pnpm run verify && pnpm run package:plugin"
   },
   "keywords": [
     "obsidian",

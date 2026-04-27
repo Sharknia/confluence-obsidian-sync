@@ -2,6 +2,34 @@
 
 Confluence 문서를 Obsidian에서 편집 가능한 로컬 Markdown 작업 사본으로 내려받고, 안전하게 반복 Pull하기 위한 Obsidian 플러그인입니다.
 
+## 새 vault에 수동 설치
+
+1. 플러그인 zip을 생성합니다.
+
+```bash
+pnpm run package:plugin
+```
+
+2. 생성된 zip을 새 vault의 플러그인 폴더에 풉니다.
+
+```text
+dist/confluence-obsidian-sync-0.1.0.zip
+```
+
+zip을 풀면 다음 폴더가 생겨야 합니다.
+
+```text
+<vault>/.obsidian/plugins/confluence-obsidian-sync/
+  main.js
+  manifest.json
+  styles.css
+```
+
+3. Obsidian에서 새 vault를 열고 `Settings > Community plugins`로 이동합니다.
+4. Restricted mode를 끄고, Installed plugins 목록에서 `Confluence Obsidian Sync`를 활성화합니다.
+5. 플러그인 설정에서 Confluence base URL, Atlassian account email, API token을 입력합니다.
+6. 왼쪽 리본 아이콘 또는 명령 팔레트의 `Open Sync Panel`로 Sync Panel을 엽니다.
+
 ## Pull 결과 확인
 
 Pull Tree 실행 후 결과 요약은 Obsidian Notice로 표시됩니다.
@@ -43,4 +71,5 @@ Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `Pull R
 pnpm install
 pnpm run verify
 pnpm run prepare:current-vault
+pnpm run package:plugin
 ```

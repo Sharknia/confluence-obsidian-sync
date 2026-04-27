@@ -21,6 +21,6 @@
     "types": ["node", "vitest/globals"],
     "useDefineForClassFields": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.mjs", "esbuild.config.mjs"],
+  "include": ["src/**/*.ts", "scripts/**/*.mjs", "scripts/**/*.d.mts", "esbuild.config.mjs"],
   "exclude": ["dist", "node_modules", "vault-template"]
 }
