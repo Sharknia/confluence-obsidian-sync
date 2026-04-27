@@ -156,6 +156,10 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 - 로컬에서 수정된 파일을 무조건 덮어쓰지 않도록 정책을 적용한다.
 - Pull 결과 요약을 제공한다.
 
+### 구현 계획
+
+- [Pull Sync Policy And Safe Delete Implementation Plan](superpowers/plans/2026-04-27-pull-sync-policy-safe-delete.md)
+
 ## Epic 7. Sync Panel MVP
 
 ### 목표
