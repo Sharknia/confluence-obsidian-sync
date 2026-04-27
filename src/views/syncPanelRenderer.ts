@@ -65,7 +65,6 @@ export function renderSyncPanelContent(
   const actionStatusEl = appendTextElement(actionSectionEl, "p", "");
   actionStatusEl.setAttribute("aria-live", "polite");
   appendPullButton(actionSectionEl, actions.onPullTree, !state.canRunProjectActions, actionStatusEl);
-  appendButton(actionSectionEl, "Push Current Page", actions.onPushCurrentPage, !state.canRunProjectActions);
   containerEl.append(actionSectionEl);
 }
 

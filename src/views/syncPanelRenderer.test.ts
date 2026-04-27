@@ -46,10 +46,10 @@ describe("renderSyncPanelContent", () => {
     expect(containerEl.textContent).toContain("2026-04-27T07:31:08.187Z");
     expect(containerEl.textContent).toContain("로컬 수정 스킵 1개");
     expect(containerEl.textContent).toContain("Pull Tree");
-    expect(containerEl.textContent).toContain("Push Current Page");
+    expect(containerEl.textContent).not.toContain("Push Current Page");
   });
 
-  it("wires action buttons", () => {
+  it("wires visible action buttons", () => {
     const containerEl = createContainer();
     const actions: SyncPanelActions = {
       onPullTree: vi.fn(),
@@ -62,12 +62,11 @@ describe("renderSyncPanelContent", () => {
 
     const buttons = Array.from(containerEl.querySelectorAll("button"));
     buttons.find((button) => button.textContent === "Pull Tree")?.click();
-    buttons.find((button) => button.textContent === "Push Current Page")?.click();
     buttons.find((button) => button.textContent === "Open root link")?.click();
     buttons.find((button) => button.textContent === "Open latest report")?.click();
 
     expect(actions.onPullTree).toHaveBeenCalledOnce();
-    expect(actions.onPushCurrentPage).toHaveBeenCalledOnce();
+    expect(actions.onPushCurrentPage).not.toHaveBeenCalled();
     expect(actions.onOpenRootLink).toHaveBeenCalledOnce();
     expect(actions.onOpenLatestReport).toHaveBeenCalledOnce();
   });
@@ -134,7 +133,7 @@ describe("renderSyncPanelContent", () => {
     const buttons = Array.from(containerEl.querySelectorAll("button"));
 
     expect(buttons.find((button) => button.textContent === "Pull Tree")?.disabled).toBe(true);
-    expect(buttons.find((button) => button.textContent === "Push Current Page")?.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent === "Push Current Page")).toBeUndefined();
     expect(containerEl.textContent).toContain("현재 프로젝트 없음");
   });
 });
