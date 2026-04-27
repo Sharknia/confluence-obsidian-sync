@@ -89,7 +89,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       active: true
     });
 
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 
   private async refreshSyncPanelViews(): Promise<void> {
