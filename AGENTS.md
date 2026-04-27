@@ -20,7 +20,7 @@
 - 로컬 Markdown은 낙서장, 작업 사본, AI-ready workspace다.
 - 사내 배포는 Git으로 배포되는 Obsidian vault template을 기본 전제로 한다.
 - `.env`와 Confluence 산출물 폴더는 Git에 커밋하지 않는다.
-- Pull 결과 상세 기록은 각 프로젝트의 `Pull Reports/latest.md`에 남긴다.
+- Pull 결과 상세 기록은 프로젝트 폴더와 같은 계층의 `Pull Reports/latest.md`에 남긴다.
 - MVP에서는 현재 문서 1개만 Confluence에 업로드한다.
 - 자체 RAG 앱과 채팅 UI는 만들지 않는다.
 - Codex, Claude Code, graphify 같은 외부 도구가 vault를 직접 읽는 구조를 전제로 한다.

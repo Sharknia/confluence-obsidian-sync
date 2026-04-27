@@ -217,9 +217,9 @@ describe("runPullTreeCommand", () => {
     expect(getMarkdownPageWrites(storage).map((file) => file.path)).toEqual(["confluence/Root/Root.md"]);
     expect(getMarkdownPageWrites(storage)[0]?.data).toContain('confluencePageId: "100"');
     expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
-      "confluence/Root/Pull Reports/latest.md"
+      "confluence/Pull Reports/latest.md"
     ]);
-    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
+    expect(openedReports).toEqual(["confluence/Pull Reports/latest.md"]);
     expect(getPullReportWrites(storage)[0]?.data).toContain("- 조회 실패: 1개");
     expect(notices).toEqual([
       "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 조회 실패 1개"
@@ -331,7 +331,7 @@ describe("runPullTreeCommand", () => {
       }
     });
 
-    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
+    expect(openedReports).toEqual(["confluence/Pull Reports/latest.md"]);
     expect(notices).toEqual([
       "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 변환 경고 1개"
     ]);
@@ -437,9 +437,9 @@ Local draft
 
     expect(getMarkdownPageWrites(storage)).toEqual([]);
     expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
-      "confluence/Root/Pull Reports/latest.md"
+      "confluence/Pull Reports/latest.md"
     ]);
-    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
+    expect(openedReports).toEqual(["confluence/Pull Reports/latest.md"]);
     expect(getPullReportWrites(storage)[0]?.data).toContain("## 로컬 수정 스킵");
     expect(getPullReportWrites(storage)[0]?.data).toContain("confluence/Root/Root.md");
     expect(getPullReportWrites(storage)[0]?.data).toContain("local-change");
@@ -500,7 +500,7 @@ ${existingBody}`)
     expect(storage.movedFiles[0]?.fromPath).toBe("confluence/Root/Removed.md");
     expect(storage.movedFiles[0]?.toPath).toContain("confluence/Root/.confluence-sync/trash/");
     expect(storage.movedFiles[0]?.toPath).toContain("/Removed.md");
-    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
+    expect(openedReports).toEqual(["confluence/Pull Reports/latest.md"]);
     expect(notices).toEqual(["Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 1개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
   });
 

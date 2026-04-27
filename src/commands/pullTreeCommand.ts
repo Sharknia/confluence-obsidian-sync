@@ -241,7 +241,7 @@ async function writePullReport(
   projectRootPath: string,
   reportInput: PullReportInput
 ): Promise<string> {
-  const reportFolderPath = joinVaultPath(projectRootPath, "Pull Reports");
+  const reportFolderPath = joinVaultPath(getParentVaultPath(projectRootPath), "Pull Reports");
   const reportPath = joinVaultPath(reportFolderPath, "latest.md");
 
   if (!(await storage.exists(reportFolderPath))) {
@@ -251,6 +251,15 @@ async function writePullReport(
   await storage.write(reportPath, buildPullReportMarkdown(reportInput));
 
   return reportPath;
+}
+
+function getParentVaultPath(path: string): string {
+  const pathSegments = path
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  return pathSegments.slice(0, -1).join("/");
 }
 
 function buildPullReportMarkdown(input: PullReportInput): string {
