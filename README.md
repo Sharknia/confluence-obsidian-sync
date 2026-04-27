@@ -9,13 +9,13 @@ Pull Tree 실행 후 결과 요약은 Obsidian Notice로 표시됩니다.
 상세 기록은 프로젝트 폴더 안의 다음 파일에 남습니다.
 
 ```text
-<project-folder>/.confluence-sync/pull-reports/latest.md
+<project-folder>/Pull Reports/latest.md
 ```
 
 예:
 
 ```text
-confluence/기획 문서/.confluence-sync/pull-reports/latest.md
+confluence/기획 문서/Pull Reports/latest.md
 ```
 
 `latest.md`에는 다음 내용이 기록됩니다.
@@ -33,7 +33,8 @@ confluence/기획 문서/.confluence-sync/pull-reports/latest.md
 - `duplicate-page-id`: 같은 Confluence pageId를 가진 로컬 Markdown 파일이 중복됨
 - `disappeared-local-change`: Confluence에서 사라진 페이지지만 로컬 수정이 있어 안전 삭제하지 않음
 
-Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `pull-reports/latest.md`를 먼저 확인하세요.
+Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `Pull Reports/latest.md`를 먼저 확인하세요.
+스킵, 안전 삭제, 조회 실패, 변환 경고가 있으면 Pull 후 이 파일이 자동으로 열립니다.
 
 ## 개발
 

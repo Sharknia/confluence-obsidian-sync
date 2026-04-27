@@ -25,6 +25,7 @@ export interface RunPullTreeCommandInput {
   storage: ProjectStorageAdapter;
   fetchTree?: PullTreeFetcher;
   showNotice: (message: string) => void;
+  openReport?: (path: string) => Promise<void>;
 }
 
 const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType, rootContentId) => {
@@ -37,7 +38,8 @@ export async function runPullTreeCommand({
   settings,
   storage,
   fetchTree = defaultPullTreeFetcher,
-  showNotice
+  showNotice,
+  openReport
 }: RunPullTreeCommandInput): Promise<void> {
   const missingFields = getMissingConfluenceConnectionFields(settings);
 
@@ -68,6 +70,7 @@ export async function runPullTreeCommand({
     let markdownFiles: Awaited<ReturnType<typeof buildPageMarkdownFiles>>;
     let writeResult: PullSyncApplyResult;
     let syncPlan: ReturnType<typeof createPullSyncPlan>;
+    let conversionWarningCount = 0;
 
     try {
       const safeDeleteRootPath = buildSafeDeleteRootPath(
@@ -102,17 +105,26 @@ export async function runPullTreeCommand({
         localFiles: localMarkdownFiles.files
       });
       writeResult = await applyPullSyncPlan(storage, syncPlan);
+      conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
 
       if (writeResult.ok) {
-        await writePullReport(storage, currentProject.localFolderPath, {
+        const reportPath = await writePullReport(storage, currentProject.localFolderPath, {
           pulledAt: new Date(),
           createCount: syncPlan.filesToWrite.filter((file) => file.operation === "create").length,
           updateCount: syncPlan.filesToWrite.filter((file) => file.operation === "update").length,
           writeResult,
           syncPlan,
           fetchFailureCount: result.errors.length,
-          conversionWarningCount: markdownFiles.reduce((count, file) => count + file.warnings.length, 0)
+          conversionWarningCount
         });
+
+        if (openReport !== undefined && hasPullReportIssue(writeResult, result.errors.length, conversionWarningCount)) {
+          try {
+            await openReport(reportPath);
+          } catch {
+            showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`);
+          }
+        }
       }
     } catch {
       showNotice("Markdown 파일을 저장할 수 없습니다.");
@@ -126,7 +138,6 @@ export async function runPullTreeCommand({
 
     const createCount = syncPlan.filesToWrite.filter((file) => file.operation === "create").length;
     const updateCount = syncPlan.filesToWrite.filter((file) => file.operation === "update").length;
-    const conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
     showNotice(
       `Pull 완료: 추가 ${createCount}개, 갱신 ${updateCount}개, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
         result.errors.length,
@@ -153,6 +164,19 @@ function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCo
   }
 
   return suffixes.length > 0 ? `, ${suffixes.join(", ")}` : "";
+}
+
+function hasPullReportIssue(
+  writeResult: Extract<PullSyncApplyResult, { ok: true }>,
+  fetchFailureCount: number,
+  conversionWarningCount: number
+): boolean {
+  return (
+    writeResult.safeDeletedFileCount > 0 ||
+    writeResult.skippedLocalChangeCount > 0 ||
+    fetchFailureCount > 0 ||
+    conversionWarningCount > 0
+  );
 }
 
 function toSettingsFieldName(field: RequiredConfluenceConnectionField): string {
@@ -216,8 +240,8 @@ async function writePullReport(
   storage: ProjectStorageAdapter,
   projectRootPath: string,
   reportInput: PullReportInput
-): Promise<void> {
-  const reportFolderPath = joinVaultPath(projectRootPath, ".confluence-sync", "pull-reports");
+): Promise<string> {
+  const reportFolderPath = joinVaultPath(projectRootPath, "Pull Reports");
   const reportPath = joinVaultPath(reportFolderPath, "latest.md");
 
   if (!(await storage.exists(reportFolderPath))) {
@@ -225,6 +249,8 @@ async function writePullReport(
   }
 
   await storage.write(reportPath, buildPullReportMarkdown(reportInput));
+
+  return reportPath;
 }
 
 function buildPullReportMarkdown(input: PullReportInput): string {

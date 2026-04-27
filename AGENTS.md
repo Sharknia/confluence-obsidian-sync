@@ -20,7 +20,7 @@
 - 로컬 Markdown은 낙서장, 작업 사본, AI-ready workspace다.
 - 사내 배포는 Git으로 배포되는 Obsidian vault template을 기본 전제로 한다.
 - `.env`와 Confluence 산출물 폴더는 Git에 커밋하지 않는다.
-- Pull 결과 상세 기록은 각 프로젝트의 `.confluence-sync/pull-reports/latest.md`에 남긴다.
+- Pull 결과 상세 기록은 각 프로젝트의 `Pull Reports/latest.md`에 남긴다.
 - MVP에서는 현재 문서 1개만 Confluence에 업로드한다.
 - 자체 RAG 앱과 채팅 UI는 만들지 않는다.
 - Codex, Claude Code, graphify 같은 외부 도구가 vault를 직접 읽는 구조를 전제로 한다.
@@ -37,7 +37,7 @@
 - Confluence API 접근, Markdown 변환, 파일 시스템 저장, UI 상태 관리를 분리한다.
 - 위험한 작업은 미리보기와 명시적 사용자 확인을 거친다.
 - Confluence에서 사라진 문서는 즉시 삭제하지 않고 안전 삭제 폴더로 이동한다.
-- Pull 결과 요약 Notice는 휘발성이 있으므로 스킵, 안전 삭제, 조회 실패 원인은 `pull-reports/latest.md`에서 확인하게 한다.
+- Pull 결과 요약 Notice는 휘발성이 있으므로 스킵, 안전 삭제, 조회 실패 원인은 `Pull Reports/latest.md`에서 확인하게 한다.
 
 ## 코드 작성 기준
 

@@ -54,11 +54,13 @@ function createStorageMock(overrides: Partial<ProjectStorageAdapter> = {}): Stor
 }
 
 function getMarkdownPageWrites(storage: StorageMock): Array<{ path: string; data: string }> {
-  return storage.writtenFiles.filter((file) => !file.path.includes("/.confluence-sync/"));
+  return storage.writtenFiles.filter(
+    (file) => !file.path.includes("/.confluence-sync/") && !file.path.includes("/Pull Reports/")
+  );
 }
 
 function getPullReportWrites(storage: StorageMock): Array<{ path: string; data: string }> {
-  return storage.writtenFiles.filter((file) => file.path.includes("/.confluence-sync/pull-reports/"));
+  return storage.writtenFiles.filter((file) => file.path.includes("/Pull Reports/"));
 }
 
 describe("runPullTreeCommand", () => {
@@ -158,6 +160,7 @@ describe("runPullTreeCommand", () => {
 
   it("페이지 트리 조회에 성공하면 Markdown 파일을 저장하고 페이지와 조회 실패 개수를 안내한다", async () => {
     const notices: string[] = [];
+    const openedReports: string[] = [];
     const storage = createStorageMock();
     const fetchedRoots: Array<{ rootContentType: "page" | "folder"; rootContentId: string }> = [];
     const fetchTree: PullTreeFetcher = (_settings, rootContentType, rootContentId) => {
@@ -203,15 +206,20 @@ describe("runPullTreeCommand", () => {
       settings: createSettings(),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
     expect(fetchedRoots).toEqual([{ rootContentType: "page", rootContentId: "100" }]);
     expect(getMarkdownPageWrites(storage).map((file) => file.path)).toEqual(["confluence/Root/Root.md"]);
     expect(getMarkdownPageWrites(storage)[0]?.data).toContain('confluencePageId: "100"');
     expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
-      "confluence/Root/.confluence-sync/pull-reports/latest.md"
+      "confluence/Root/Pull Reports/latest.md"
     ]);
+    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
     expect(getPullReportWrites(storage)[0]?.data).toContain("- 조회 실패: 1개");
     expect(notices).toEqual([
       "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 조회 실패 1개"
@@ -290,6 +298,7 @@ describe("runPullTreeCommand", () => {
 
   it("Markdown 변환 경고가 있으면 저장 성공 Notice에 경고 개수를 덧붙인다", async () => {
     const notices: string[] = [];
+    const openedReports: string[] = [];
     const storage = createStorageMock();
     const fetchTree: PullTreeFetcher = () => {
       const rootPage = {
@@ -315,9 +324,14 @@ describe("runPullTreeCommand", () => {
       settings: createSettings(),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
+    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
     expect(notices).toEqual([
       "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 변환 경고 1개"
     ]);
@@ -325,6 +339,7 @@ describe("runPullTreeCommand", () => {
 
   it("기존 파일이 로컬 수정되지 않았으면 같은 경로를 갱신한다", async () => {
     const notices: string[] = [];
+    const openedReports: string[] = [];
     const existingBody = "Old body\n";
     const storage = createStorageMock({
       list: (path) =>
@@ -361,15 +376,21 @@ ${existingBody}`)
       settings: createSettings(),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
     expect(getMarkdownPageWrites(storage).map((file) => file.path)).toEqual(["confluence/Root/Old Root.md"]);
+    expect(openedReports).toEqual([]);
     expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 1개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
   });
 
   it("로컬 수정된 기존 파일은 덮어쓰지 않는다", async () => {
     const notices: string[] = [];
+    const openedReports: string[] = [];
     const previousPulledBody = "Remote v1\n";
     const storage = createStorageMock({
       list: (path) =>
@@ -407,13 +428,18 @@ Local draft
       settings: createSettings(),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
     expect(getMarkdownPageWrites(storage)).toEqual([]);
     expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
-      "confluence/Root/.confluence-sync/pull-reports/latest.md"
+      "confluence/Root/Pull Reports/latest.md"
     ]);
+    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
     expect(getPullReportWrites(storage)[0]?.data).toContain("## 로컬 수정 스킵");
     expect(getPullReportWrites(storage)[0]?.data).toContain("confluence/Root/Root.md");
     expect(getPullReportWrites(storage)[0]?.data).toContain("local-change");
@@ -422,6 +448,7 @@ Local draft
 
   it("Confluence에서 사라진 파일은 안전 삭제 폴더로 이동한다", async () => {
     const notices: string[] = [];
+    const openedReports: string[] = [];
     const existingBody = "Old body\n";
     const storage = createStorageMock({
       list: (path) =>
@@ -463,12 +490,17 @@ ${existingBody}`)
       settings: createSettings(),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
     expect(storage.movedFiles[0]?.fromPath).toBe("confluence/Root/Removed.md");
     expect(storage.movedFiles[0]?.toPath).toContain("confluence/Root/.confluence-sync/trash/");
     expect(storage.movedFiles[0]?.toPath).toContain("/Removed.md");
+    expect(openedReports).toEqual(["confluence/Root/Pull Reports/latest.md"]);
     expect(notices).toEqual(["Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 1개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
   });
 

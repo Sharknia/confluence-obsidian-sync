@@ -1,4 +1,4 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import {
   OPEN_SYNC_PANEL_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
@@ -46,7 +46,8 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
         void runPullTreeCommand({
           settings: this.settings,
           storage: createVaultStorageAdapter(this),
-          showNotice: (message) => new Notice(message)
+          showNotice: (message) => new Notice(message),
+          openReport: (path) => openVaultMarkdownFile(this, path)
         });
       }
     });
@@ -70,4 +71,25 @@ function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): Projec
     list: (path) => plugin.app.vault.adapter.list(path),
     rename: (fromPath, toPath) => plugin.app.vault.adapter.rename(fromPath, toPath)
   };
+}
+
+async function openVaultMarkdownFile(plugin: ConfluenceObsidianSyncPlugin, path: string): Promise<void> {
+  for (let attemptCount = 0; attemptCount < 5; attemptCount += 1) {
+    const file = plugin.app.vault.getAbstractFileByPath(path);
+
+    if (file instanceof TFile) {
+      await plugin.app.workspace.getLeaf(false).openFile(file);
+      return;
+    }
+
+    await delay(100);
+  }
+
+  new Notice(`Pull 리포트가 생성되었습니다: ${path}`);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
