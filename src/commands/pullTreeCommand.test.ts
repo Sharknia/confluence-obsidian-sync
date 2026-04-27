@@ -53,6 +53,14 @@ function createStorageMock(overrides: Partial<ProjectStorageAdapter> = {}): Stor
   };
 }
 
+function getMarkdownPageWrites(storage: StorageMock): Array<{ path: string; data: string }> {
+  return storage.writtenFiles.filter((file) => !file.path.includes("/.confluence-sync/"));
+}
+
+function getPullReportWrites(storage: StorageMock): Array<{ path: string; data: string }> {
+  return storage.writtenFiles.filter((file) => file.path.includes("/.confluence-sync/pull-reports/"));
+}
+
 describe("runPullTreeCommand", () => {
   it("Confluence 연결 설정이 없으면 누락된 필드를 안내한다", async () => {
     const notices: string[] = [];
@@ -144,7 +152,7 @@ describe("runPullTreeCommand", () => {
     });
 
     expect(fetchedRoots).toEqual([{ rootContentType: "folder", rootContentId: "folder-100" }]);
-    expect(storage.writtenFiles).toEqual([]);
+    expect(getMarkdownPageWrites(storage)).toEqual([]);
     expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
   });
 
@@ -199,8 +207,12 @@ describe("runPullTreeCommand", () => {
     });
 
     expect(fetchedRoots).toEqual([{ rootContentType: "page", rootContentId: "100" }]);
-    expect(storage.writtenFiles.map((file) => file.path)).toEqual(["confluence/Root/Root.md"]);
-    expect(storage.writtenFiles[0]?.data).toContain('confluencePageId: "100"');
+    expect(getMarkdownPageWrites(storage).map((file) => file.path)).toEqual(["confluence/Root/Root.md"]);
+    expect(getMarkdownPageWrites(storage)[0]?.data).toContain('confluencePageId: "100"');
+    expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
+      "confluence/Root/.confluence-sync/pull-reports/latest.md"
+    ]);
+    expect(getPullReportWrites(storage)[0]?.data).toContain("- 조회 실패: 1개");
     expect(notices).toEqual([
       "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 조회 실패 1개"
     ]);
@@ -352,7 +364,7 @@ ${existingBody}`)
       showNotice: (message) => notices.push(message)
     });
 
-    expect(storage.writtenFiles.map((file) => file.path)).toEqual(["confluence/Root/Old Root.md"]);
+    expect(getMarkdownPageWrites(storage).map((file) => file.path)).toEqual(["confluence/Root/Old Root.md"]);
     expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 1개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
   });
 
@@ -398,7 +410,13 @@ Local draft
       showNotice: (message) => notices.push(message)
     });
 
-    expect(storage.writtenFiles).toEqual([]);
+    expect(getMarkdownPageWrites(storage)).toEqual([]);
+    expect(getPullReportWrites(storage).map((file) => file.path)).toEqual([
+      "confluence/Root/.confluence-sync/pull-reports/latest.md"
+    ]);
+    expect(getPullReportWrites(storage)[0]?.data).toContain("## 로컬 수정 스킵");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("confluence/Root/Root.md");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("local-change");
     expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 1개, 변경 없음 0개"]);
   });
 

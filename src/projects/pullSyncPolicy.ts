@@ -14,7 +14,14 @@ export interface LocalMarkdownPageFile extends LocalMarkdownFileSnapshot {
   pageId: string;
   metadata: ParsedPageMarkdownMetadata;
   hasLocalChanges: boolean;
+  skipReason?: PullSyncSkipReason;
 }
+
+export type PullSyncSkipReason =
+  | "duplicate-page-id"
+  | "local-change"
+  | "legacy-body-mismatch"
+  | "disappeared-local-change";
 
 export interface PageMarkdownFileWriteOperation extends PageMarkdownFile {
   operation: "create" | "update";
@@ -55,7 +62,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     const localFile = localFilesByPageId.get(remoteFile.pageId);
     const duplicateLocalFiles = duplicateLocalFilesByPageId.get(remoteFile.pageId) ?? [];
 
-    skippedLocalChanges.push(...duplicateLocalFiles);
+    skippedLocalChanges.push(...duplicateLocalFiles.map((file) => withSkipReason(file, "duplicate-page-id")));
 
     if (localFile === undefined) {
       filesToWrite.push({ ...remoteFile, operation: "create" });
@@ -63,7 +70,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     }
 
     if (!canReplaceLocalFile(localFile, remoteFile)) {
-      skippedLocalChanges.push(localFile);
+      skippedLocalChanges.push(withSkipReason(localFile, getReplacementSkipReason(localFile)));
       continue;
     }
 
@@ -81,7 +88,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     }
 
     if (localFile.hasLocalChanges) {
-      skippedLocalChanges.push(localFile);
+      skippedLocalChanges.push(withSkipReason(localFile, "disappeared-local-change"));
       continue;
     }
 
@@ -97,6 +104,14 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     skippedLocalChanges,
     unchangedFileCount,
   };
+}
+
+function withSkipReason(file: LocalMarkdownPageFile, skipReason: PullSyncSkipReason): LocalMarkdownPageFile {
+  return { ...file, skipReason };
+}
+
+function getReplacementSkipReason(localFile: LocalMarkdownPageFile): PullSyncSkipReason {
+  return localFile.metadata.contentHash === null ? "legacy-body-mismatch" : "local-change";
 }
 
 function indexLocalFilesByPageId(localPageFiles: LocalMarkdownPageFile[]): {

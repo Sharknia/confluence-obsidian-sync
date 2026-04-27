@@ -102,6 +102,18 @@ export async function runPullTreeCommand({
         localFiles: localMarkdownFiles.files
       });
       writeResult = await applyPullSyncPlan(storage, syncPlan);
+
+      if (writeResult.ok) {
+        await writePullReport(storage, currentProject.localFolderPath, {
+          pulledAt: new Date(),
+          createCount: syncPlan.filesToWrite.filter((file) => file.operation === "create").length,
+          updateCount: syncPlan.filesToWrite.filter((file) => file.operation === "update").length,
+          writeResult,
+          syncPlan,
+          fetchFailureCount: result.errors.length,
+          conversionWarningCount: markdownFiles.reduce((count, file) => count + file.warnings.length, 0)
+        });
+      }
     } catch {
       showNotice("Markdown 파일을 저장할 수 없습니다.");
       return;
@@ -188,4 +200,83 @@ function buildExistingPagePathById(localMarkdownFiles: Array<{ vaultPath: string
   }
 
   return existingPagePathById;
+}
+
+interface PullReportInput {
+  pulledAt: Date;
+  createCount: number;
+  updateCount: number;
+  writeResult: Extract<PullSyncApplyResult, { ok: true }>;
+  syncPlan: ReturnType<typeof createPullSyncPlan>;
+  fetchFailureCount: number;
+  conversionWarningCount: number;
+}
+
+async function writePullReport(
+  storage: ProjectStorageAdapter,
+  projectRootPath: string,
+  reportInput: PullReportInput
+): Promise<void> {
+  const reportFolderPath = joinVaultPath(projectRootPath, ".confluence-sync", "pull-reports");
+  const reportPath = joinVaultPath(reportFolderPath, "latest.md");
+
+  if (!(await storage.exists(reportFolderPath))) {
+    await storage.mkdir(reportFolderPath);
+  }
+
+  await storage.write(reportPath, buildPullReportMarkdown(reportInput));
+}
+
+function buildPullReportMarkdown(input: PullReportInput): string {
+  const lines = [
+    "# Pull Report",
+    "",
+    `- 실행 시각: ${input.pulledAt.toISOString()}`,
+    `- 추가: ${input.createCount}개`,
+    `- 갱신: ${input.updateCount}개`,
+    `- 안전 삭제: ${input.writeResult.safeDeletedFileCount}개`,
+    `- 로컬 수정 스킵: ${input.writeResult.skippedLocalChangeCount}개`,
+    `- 변경 없음: ${input.writeResult.unchangedFileCount}개`,
+    `- 조회 실패: ${input.fetchFailureCount}개`,
+    `- 변환 경고: ${input.conversionWarningCount}개`,
+    "",
+    "## 추가",
+    ...formatWrittenFiles(input.syncPlan.filesToWrite.filter((file) => file.operation === "create")),
+    "",
+    "## 갱신",
+    ...formatWrittenFiles(input.syncPlan.filesToWrite.filter((file) => file.operation === "update")),
+    "",
+    "## 안전 삭제",
+    ...formatSafeDeletedFiles(input.syncPlan.filesToMoveToSafeDelete),
+    "",
+    "## 로컬 수정 스킵",
+    ...formatSkippedFiles(input.syncPlan.skippedLocalChanges),
+    ""
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function formatWrittenFiles(files: ReturnType<typeof createPullSyncPlan>["filesToWrite"]): string[] {
+  if (files.length === 0) {
+    return ["- 없음"];
+  }
+
+  return files.map((file) => `- \`${file.vaultPath}\` pageId=${file.pageId}`);
+}
+
+function formatSafeDeletedFiles(files: ReturnType<typeof createPullSyncPlan>["filesToMoveToSafeDelete"]): string[] {
+  if (files.length === 0) {
+    return ["- 없음"];
+  }
+
+  return files.map((file) => `- \`${file.fromPath}\` -> \`${file.toPath}\``);
+}
+
+function formatSkippedFiles(files: ReturnType<typeof createPullSyncPlan>["skippedLocalChanges"]): string[] {
+  if (files.length === 0) {
+    return ["- 없음"];
+  }
+
+  return files.map((file) => `- \`${file.vaultPath}\` pageId=${file.pageId} reason=${file.skipReason ?? "unknown"}`);
 }
