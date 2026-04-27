@@ -122,6 +122,19 @@ interface DescendantFolderSummary extends BaseDescendantContentSummary {
 
 type DescendantContentSummary = DescendantPageSummary | DescendantFolderSummary;
 
+type DescendantsContainerType = "page" | "folder";
+
+interface DescendantsFetchRoot {
+  contentType: DescendantsContainerType;
+  contentId: string;
+  depthOffset: number;
+}
+
+const DESCENDANTS_API_COLLECTION_BY_TYPE: Record<DescendantsContainerType, "pages" | "folders"> = {
+  page: "pages",
+  folder: "folders"
+};
+
 interface DescendantPageFetchResult {
   pages: ConfluencePageTreePage[];
   errors: ConfluencePageTreeError[];
@@ -397,6 +410,12 @@ function readNextLink(response: DescendantsApiResponse): string | null {
   return response._links.next;
 }
 
+function buildDescendantsRequestPath(root: DescendantsFetchRoot): string {
+  const collectionName = DESCENDANTS_API_COLLECTION_BY_TYPE[root.contentType];
+
+  return `/wiki/api/v2/${collectionName}/${encodeURIComponent(root.contentId)}/descendants?limit=${DESCENDANTS_PAGE_LIMIT}&depth=${DESCENDANTS_MAX_DEPTH}`;
+}
+
 function toDescendantPageSummaries(response: DescendantsApiResponse): DescendantPageSummary[] | ConfluencePageTreeFailure {
   const summaries: DescendantPageSummary[] = [];
 
@@ -445,14 +464,14 @@ function toDescendantContentSummaries(
   return summaries;
 }
 
-async function fetchDescendantPageSummaries(
+async function fetchDescendantSummariesForRoot<TSummary extends BaseDescendantContentSummary>(
   settings: ConfluenceSyncSettings,
-  rootPageId: string,
-  transport: ConfluenceRequestTransport
-): Promise<DescendantPageSummary[] | ConfluencePageTreeFailure> {
-  const summaries: DescendantPageSummary[] = [];
-  let nextRequestPath: string | null =
-    `/wiki/api/v2/pages/${encodeURIComponent(rootPageId)}/descendants?limit=${DESCENDANTS_PAGE_LIMIT}&depth=${DESCENDANTS_MAX_DEPTH}`;
+  root: DescendantsFetchRoot,
+  transport: ConfluenceRequestTransport,
+  toSummaries: (response: DescendantsApiResponse) => TSummary[] | ConfluencePageTreeFailure
+): Promise<TSummary[] | ConfluencePageTreeFailure> {
+  const summaries: TSummary[] = [];
+  let nextRequestPath: string | null = buildDescendantsRequestPath(root);
 
   while (nextRequestPath !== null) {
     const descendantsResponse = await requestConfluence(
@@ -472,13 +491,18 @@ async function fetchDescendantPageSummaries(
       return buildFailure("invalid-response", "Confluence descendants 응답 형식이 올바르지 않습니다.");
     }
 
-    const pageSummaries = toDescendantPageSummaries(descendantsResponse.json);
+    const pageSummaries = toSummaries(descendantsResponse.json);
 
     if (isPageTreeFailure(pageSummaries)) {
       return pageSummaries;
     }
 
-    summaries.push(...pageSummaries);
+    summaries.push(
+      ...pageSummaries.map((summary) => ({
+        ...summary,
+        depth: summary.depth + root.depthOffset
+      }))
+    );
 
     const rawNextLink = readNextLink(descendantsResponse.json);
 
@@ -497,6 +521,51 @@ async function fetchDescendantPageSummaries(
   }
 
   return summaries;
+}
+
+async function fetchDescendantPageSummaries(
+  settings: ConfluenceSyncSettings,
+  rootPageId: string,
+  transport: ConfluenceRequestTransport
+): Promise<DescendantPageSummary[] | ConfluencePageTreeFailure> {
+  const summariesByPageId = new Map<string, DescendantPageSummary>();
+  const expandedRootKeys = new Set<string>();
+  const pendingRoots: DescendantsFetchRoot[] = [{ contentType: "page", contentId: rootPageId, depthOffset: 0 }];
+
+  while (pendingRoots.length > 0) {
+    const root = pendingRoots.shift();
+
+    if (root === undefined) {
+      continue;
+    }
+
+    const rootKey = `${root.contentType}:${root.contentId}`;
+
+    if (expandedRootKeys.has(rootKey)) {
+      continue;
+    }
+
+    expandedRootKeys.add(rootKey);
+    const pageSummaries = await fetchDescendantSummariesForRoot(settings, root, transport, toDescendantPageSummaries);
+
+    if (isPageTreeFailure(pageSummaries)) {
+      return pageSummaries;
+    }
+
+    for (const summary of pageSummaries) {
+      if (summariesByPageId.has(summary.id)) {
+        continue;
+      }
+
+      summariesByPageId.set(summary.id, summary);
+
+      if (summary.depth - root.depthOffset === DESCENDANTS_MAX_DEPTH) {
+        pendingRoots.push({ contentType: "page", contentId: summary.id, depthOffset: summary.depth });
+      }
+    }
+  }
+
+  return [...summariesByPageId.values()];
 }
 
 async function fetchFolderDescendantContentSummaries(
