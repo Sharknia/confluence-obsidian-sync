@@ -54,6 +54,8 @@
 - 제품 빌드는 `pnpm run build`를 기준으로 한다.
 - 린트는 `pnpm run lint`를 기준으로 한다.
 - 검증 스크립트가 필요하면 `pnpm run verify`를 사용한다.
+- Confluence API 호출, 인증, pagination, 트리 탐색 로직을 바꿨다면 로컬 mock 테스트만으로 끝내지 않고, 설정된 vault 인증으로 실제 Confluence API smoke test를 수행해 HTTP status와 결과 개수를 확인한다.
+- 실제 API 검증 중에는 이메일, API token, Authorization header, 원문 응답 본문을 출력하지 않는다.
 - Obsidian 플러그인 런타임, 명령, UI, 설정, Confluence 호출 로직을 바꾼 뒤 작업 완료를 보고하기 전 반드시 `pnpm run prepare:current-vault`를 실행한다.
 - `prepare:current-vault` 후 `.obsidian/plugins/confluence-obsidian-sync/main.js`가 `dist/main.js`와 같은 최신 산출물인지 확인한다.
 - 사용자가 Obsidian에서 확인할 동작을 바꿨다면 완료 전 `rg`로 예전 안내 문구가 `.obsidian/plugins/confluence-obsidian-sync/main.js`에 남아 있지 않은지 확인한다.
