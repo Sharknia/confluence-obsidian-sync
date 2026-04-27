@@ -83,6 +83,9 @@ export interface ConfluenceFolderTreeSuccess {
 export type ConfluenceFolderTreeResult = ConfluenceFolderTreeSuccess | ConfluencePageTreeFailure;
 export type ConfluenceRootContentTreeResult = ConfluencePageTreeResult | ConfluenceFolderTreeResult;
 
+const DESCENDANTS_PAGE_LIMIT = 100;
+const DESCENDANTS_MAX_DEPTH = 10;
+
 interface PageDetailApiResponse {
   id?: unknown;
   title?: unknown;
@@ -448,7 +451,8 @@ async function fetchDescendantPageSummaries(
   transport: ConfluenceRequestTransport
 ): Promise<DescendantPageSummary[] | ConfluencePageTreeFailure> {
   const summaries: DescendantPageSummary[] = [];
-  let nextRequestPath: string | null = `/wiki/api/v2/pages/${encodeURIComponent(rootPageId)}/descendants?limit=100`;
+  let nextRequestPath: string | null =
+    `/wiki/api/v2/pages/${encodeURIComponent(rootPageId)}/descendants?limit=${DESCENDANTS_PAGE_LIMIT}&depth=${DESCENDANTS_MAX_DEPTH}`;
 
   while (nextRequestPath !== null) {
     const descendantsResponse = await requestConfluence(
@@ -501,7 +505,8 @@ async function fetchFolderDescendantContentSummaries(
   transport: ConfluenceRequestTransport
 ): Promise<DescendantContentSummary[] | ConfluencePageTreeFailure> {
   const summaries: DescendantContentSummary[] = [];
-  let nextRequestPath: string | null = `/wiki/api/v2/folders/${encodeURIComponent(rootFolderId)}/descendants?limit=100`;
+  let nextRequestPath: string | null =
+    `/wiki/api/v2/folders/${encodeURIComponent(rootFolderId)}/descendants?limit=${DESCENDANTS_PAGE_LIMIT}&depth=${DESCENDANTS_MAX_DEPTH}`;
 
   while (nextRequestPath !== null) {
     const descendantsResponse = await requestConfluence(

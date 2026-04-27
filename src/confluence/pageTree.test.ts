@@ -101,7 +101,7 @@ describe("fetchConfluencePageTree", () => {
     });
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/pages/100",
-      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100"
+      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10"
     ]);
   });
 
@@ -123,7 +123,7 @@ describe("fetchConfluencePageTree", () => {
             { id: "200", title: "Child A", type: "page", parentId: "100", depth: 1, childPosition: 0 },
             { id: "300", title: "Child B", type: "page", parentId: "100", depth: 1, childPosition: 1 }
           ],
-          _links: { next: "/wiki/api/v2/pages/100/descendants?limit=100&cursor=next-token" }
+          _links: { next: "/wiki/api/v2/pages/100/descendants?limit=100&depth=10&cursor=next-token" }
         }
       },
       {
@@ -174,8 +174,8 @@ describe("fetchConfluencePageTree", () => {
 
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/pages/100",
-      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100",
-      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&cursor=next-token",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10&cursor=next-token",
       "https://selta.atlassian.net/wiki/api/v2/pages/200",
       "https://selta.atlassian.net/wiki/api/v2/pages/300",
       "https://selta.atlassian.net/wiki/api/v2/pages/400"
@@ -488,7 +488,7 @@ describe("fetchConfluencePageTree", () => {
             { id: "folder-200", title: "Design", type: "folder", parentId: "folder-100", depth: 1, childPosition: 0 },
             { id: "page-300", title: "Overview", type: "page", parentId: "folder-200", depth: 2, childPosition: 0 }
           ],
-          _links: { next: "/wiki/api/v2/folders/folder-100/descendants?limit=100&cursor=next-token" }
+          _links: { next: "/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10&cursor=next-token" }
         }
       },
       {
@@ -552,8 +552,8 @@ describe("fetchConfluencePageTree", () => {
     }
 
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100",
-      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&cursor=next-token",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10&cursor=next-token",
       "https://selta.atlassian.net/wiki/api/v2/pages/page-300",
       "https://selta.atlassian.net/wiki/api/v2/pages/page-400"
     ]);
@@ -711,7 +711,7 @@ describe("fetchConfluencePageTree", () => {
     const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
 
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100"
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10"
     ]);
     expect(result).toEqual({
       ok: false,
