@@ -4,7 +4,7 @@ import {
   type ConfluenceRootContentTreeResult,
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
-import { buildPageMarkdownFiles } from "../projects/pageMarkdown";
+import { buildPageMarkdownFiles, parsePageMarkdownMetadata } from "../projects/pageMarkdown";
 import { createPullSyncPlan } from "../projects/pullSyncPolicy";
 import {
   applyPullSyncPlan,
@@ -70,13 +70,6 @@ export async function runPullTreeCommand({
     let syncPlan: ReturnType<typeof createPullSyncPlan>;
 
     try {
-      markdownFiles = await buildPageMarkdownFiles({
-        projectRootPath: currentProject.localFolderPath,
-        root: result.root,
-        pages: result.pages,
-        pathExists: (path) => storage.exists(path),
-        readExistingFile: (path) => storage.read(path)
-      });
       const safeDeleteRootPath = buildSafeDeleteRootPath(
         currentProject.localFolderPath,
         settings.safeDeleteFolder,
@@ -92,6 +85,15 @@ export async function runPullTreeCommand({
         showNotice(localMarkdownFiles.message);
         return;
       }
+
+      markdownFiles = await buildPageMarkdownFiles({
+        projectRootPath: currentProject.localFolderPath,
+        root: result.root,
+        pages: result.pages,
+        existingPagePathById: buildExistingPagePathById(localMarkdownFiles.files),
+        pathExists: (path) => storage.exists(path),
+        readExistingFile: (path) => storage.read(path)
+      });
 
       syncPlan = createPullSyncPlan({
         projectRootPath: currentProject.localFolderPath,
@@ -170,4 +172,20 @@ function joinVaultPath(...segments: string[]): string {
     .map((segment) => segment.replace(/^\/+|\/+$/gu, ""))
     .filter((segment) => segment.length > 0)
     .join("/");
+}
+
+function buildExistingPagePathById(localMarkdownFiles: Array<{ vaultPath: string; content: string }>): Map<string, string> {
+  const existingPagePathById = new Map<string, string>();
+
+  for (const localFile of localMarkdownFiles) {
+    const metadata = parsePageMarkdownMetadata(localFile.content);
+
+    if (metadata === null || existingPagePathById.has(metadata.pageId)) {
+      continue;
+    }
+
+    existingPagePathById.set(metadata.pageId, localFile.vaultPath);
+  }
+
+  return existingPagePathById;
 }

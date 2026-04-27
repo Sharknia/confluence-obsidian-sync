@@ -170,6 +170,30 @@ Same body
     expect(plan.skippedLocalChanges).toEqual([]);
   });
 
+  it("skips legacy files without a hash when their markdown body differs from the remote body", () => {
+    const remoteFile = createRemoteFile({ pageId: "100", vaultPath: "confluence/Root/Root.md", body: "Remote body\n" });
+    const localFile: LocalMarkdownFileSnapshot = {
+      vaultPath: "confluence/Root/Root.md",
+      content: `---
+confluencePageId: "100"
+confluenceVersion: 1
+---
+
+Local legacy body
+`,
+    };
+
+    const plan = createPullSyncPlan({
+      projectRootPath: "confluence/Root",
+      safeDeleteRootPath: "confluence/Root/.confluence-sync/trash/2026-04-27T00-00-00-000Z",
+      remoteFiles: [remoteFile],
+      localFiles: [localFile],
+    });
+
+    expect(plan.filesToWrite).toEqual([]);
+    expect(plan.skippedLocalChanges.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
+  });
+
   it("skips duplicate local files that point to a page already represented by another file", () => {
     const remoteFile = createRemoteFile({ pageId: "100", vaultPath: "confluence/Root/Root.md", body: "Remote v2\n" });
     const keptLocalFile = createLocalFile("confluence/Root/Root.md", "100", "Remote v1\n");
@@ -185,5 +209,29 @@ Same body
     expect(plan.filesToWrite).toEqual([{ ...remoteFile, vaultPath: "confluence/Root/Root.md", operation: "update" }]);
     expect(plan.skippedLocalChanges.map((file) => file.vaultPath)).toEqual(["confluence/Root/Duplicate Root.md"]);
     expect(plan.filesToMoveToSafeDelete).toEqual([]);
+  });
+
+  it("moves clean duplicate local files when their page disappeared remotely", () => {
+    const firstRemovedFile = createLocalFile("confluence/Root/Removed.md", "999", "Old body\n");
+    const duplicateRemovedFile = createLocalFile("confluence/Root/Removed Copy.md", "999", "Old copy body\n");
+
+    const plan = createPullSyncPlan({
+      projectRootPath: "confluence/Root",
+      safeDeleteRootPath: "confluence/Root/.confluence-sync/trash/2026-04-27T00-00-00-000Z",
+      remoteFiles: [],
+      localFiles: [firstRemovedFile, duplicateRemovedFile],
+    });
+
+    expect(plan.filesToMoveToSafeDelete).toEqual([
+      {
+        fromPath: "confluence/Root/Removed.md",
+        toPath: "confluence/Root/.confluence-sync/trash/2026-04-27T00-00-00-000Z/Removed.md",
+      },
+      {
+        fromPath: "confluence/Root/Removed Copy.md",
+        toPath: "confluence/Root/.confluence-sync/trash/2026-04-27T00-00-00-000Z/Removed Copy.md",
+      },
+    ]);
+    expect(plan.skippedLocalChanges).toEqual([]);
   });
 });

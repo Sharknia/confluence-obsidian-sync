@@ -44,15 +44,18 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
     .map(toLocalMarkdownPageFile)
     .filter((file): file is LocalMarkdownPageFile => file !== null)
     .filter((file) => !isInsideSafeDeleteFolder(file.vaultPath, input.safeDeleteRootPath));
-  const { localFilesByPageId, duplicateLocalFiles } = indexLocalFilesByPageId(localPageFiles);
+  const { localFilesByPageId, duplicateLocalFilesByPageId } = indexLocalFilesByPageId(localPageFiles);
   const remotePageIds = new Set(input.remoteFiles.map((file) => file.pageId));
   const filesToWrite: PageMarkdownFileWriteOperation[] = [];
   const filesToMoveToSafeDelete: SafeDeleteMoveOperation[] = [];
-  const skippedLocalChanges: LocalMarkdownPageFile[] = [...duplicateLocalFiles];
+  const skippedLocalChanges: LocalMarkdownPageFile[] = [];
   let unchangedFileCount = 0;
 
   for (const remoteFile of input.remoteFiles) {
     const localFile = localFilesByPageId.get(remoteFile.pageId);
+    const duplicateLocalFiles = duplicateLocalFilesByPageId.get(remoteFile.pageId) ?? [];
+
+    skippedLocalChanges.push(...duplicateLocalFiles);
 
     if (localFile === undefined) {
       filesToWrite.push({ ...remoteFile, operation: "create" });
@@ -73,7 +76,7 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
   }
 
   for (const localFile of localPageFiles) {
-    if (remotePageIds.has(localFile.pageId) || duplicateLocalFiles.includes(localFile)) {
+    if (remotePageIds.has(localFile.pageId)) {
       continue;
     }
 
@@ -98,13 +101,15 @@ export function createPullSyncPlan(input: CreatePullSyncPlanInput): PullSyncPlan
 
 function indexLocalFilesByPageId(localPageFiles: LocalMarkdownPageFile[]): {
   localFilesByPageId: Map<string, LocalMarkdownPageFile>;
-  duplicateLocalFiles: LocalMarkdownPageFile[];
+  duplicateLocalFilesByPageId: Map<string, LocalMarkdownPageFile[]>;
 } {
   const localFilesByPageId = new Map<string, LocalMarkdownPageFile>();
-  const duplicateLocalFiles: LocalMarkdownPageFile[] = [];
+  const duplicateLocalFilesByPageId = new Map<string, LocalMarkdownPageFile[]>();
 
   for (const localFile of localPageFiles) {
     if (localFilesByPageId.has(localFile.pageId)) {
+      const duplicateLocalFiles = duplicateLocalFilesByPageId.get(localFile.pageId) ?? [];
+      duplicateLocalFilesByPageId.set(localFile.pageId, duplicateLocalFiles);
       duplicateLocalFiles.push(localFile);
       continue;
     }
@@ -112,7 +117,7 @@ function indexLocalFilesByPageId(localPageFiles: LocalMarkdownPageFile[]): {
     localFilesByPageId.set(localFile.pageId, localFile);
   }
 
-  return { localFilesByPageId, duplicateLocalFiles };
+  return { localFilesByPageId, duplicateLocalFilesByPageId };
 }
 
 function toLocalMarkdownPageFile(file: LocalMarkdownFileSnapshot): LocalMarkdownPageFile | null {

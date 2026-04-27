@@ -405,6 +405,46 @@ Other content
     ]);
   });
 
+  it("uses existing page paths before resolving links when a page title changed locally", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "New Root",
+      bodyStorageValue: `
+        <p>
+          <ac:link>
+            <ri:page ri:content-title="Child" />
+            <ac:link-body>Child Page</ac:link-body>
+          </ac:link>
+        </p>
+      `,
+    });
+    const childPage = createPage({
+      pageId: "200",
+      title: "Child",
+      parentId: "100",
+      depth: 1,
+      childPosition: 0,
+    });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [{ ...childPage, children: [] }] };
+
+    const files = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage, childPage],
+      existingPagePathById: new Map([
+        ["100", "confluence/Root/Old Root.md"],
+        ["200", "confluence/Root/Old Root/Old Child.md"],
+      ]),
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(files.map((file) => file.vaultPath)).toEqual([
+      "confluence/Root/Old Root.md",
+      "confluence/Root/Old Root/Old Child.md",
+    ]);
+    expect(files[0]?.content).toContain("[[confluence/Root/Old Root/Old Child|Child Page]]");
+  });
+
   it("uses the Confluence source host when converting Jira issue macros", async () => {
     const rootPage = createPage({
       pageId: "100",

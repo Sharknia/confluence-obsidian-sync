@@ -57,6 +57,7 @@ export interface BuildPageMarkdownFilesInput {
   projectRootPath: string;
   root: ConfluencePageTreeNode | ConfluenceFolderContentTreeNode;
   pages: ConfluencePageTreePage[];
+  existingPagePathById?: ReadonlyMap<string, string>;
   pathExists: (path: string) => Promise<boolean>;
   readExistingFile?: (path: string) => Promise<string>;
 }
@@ -121,6 +122,7 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
       reservedFilePathKeys,
       input.pathExists,
       input.readExistingFile,
+      input.existingPagePathById,
     );
     pathAssignments.set(page.pageId, vaultPath);
     pagesToWrite.push({ page, folderSegments: [] });
@@ -195,6 +197,7 @@ async function assignTreePageMarkdownPaths(
         reservedFilePathKeys,
         input.pathExists,
         input.readExistingFile,
+        input.existingPagePathById,
       );
       const childFolderSegment = getMarkdownFileBaseNameFromVaultPath(vaultPath);
 
@@ -295,7 +298,15 @@ async function createAvailableMarkdownPath(
   reservedPathKeys: Set<string>,
   pathExists: (path: string) => Promise<boolean>,
   readExistingFile: ((path: string) => Promise<string>) | undefined,
+  existingPagePathById?: ReadonlyMap<string, string>,
 ): Promise<string> {
+  const existingPagePath = existingPagePathById?.get(page.pageId);
+
+  if (existingPagePath !== undefined && canUseExistingPagePath(projectRootPath, existingPagePath, reservedPathKeys)) {
+    reservedPathKeys.add(createReservedPathKey(existingPagePath));
+    return existingPagePath;
+  }
+
   const baseName = removeMarkdownExtension(createSafeMarkdownFileName(page.title, page.pageId));
   const parentFolderPath = joinVaultPath(projectRootPath, ...folderSegments);
   let collisionIndex = 0;
@@ -315,6 +326,14 @@ async function createAvailableMarkdownPath(
 
     collisionIndex += 1;
   }
+}
+
+function canUseExistingPagePath(projectRootPath: string, existingPagePath: string, reservedPathKeys: Set<string>): boolean {
+  return (
+    existingPagePath.endsWith(MARKDOWN_FILE_EXTENSION) &&
+    (existingPagePath === projectRootPath || existingPagePath.startsWith(`${projectRootPath}/`)) &&
+    !reservedPathKeys.has(createReservedPathKey(existingPagePath))
+  );
 }
 
 function joinVaultPath(...segments: string[]): string {
