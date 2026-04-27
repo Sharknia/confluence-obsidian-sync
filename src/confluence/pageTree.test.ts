@@ -647,6 +647,176 @@ describe("fetchConfluencePageTree", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("continues folder descendants from depth 10 folder containers", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "folder-200", title: "Depth Ten Folder", type: "folder", parentId: "folder-100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-300", title: "Depth Eleven Page", type: "page", parentId: "folder-200", depth: 1, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "Depth Eleven Page",
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Depth+Eleven+Page" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300"
+    ]);
+    expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
+      { pageId: "page-300", parentId: "folder-200", depth: 11 }
+    ]);
+    expectFolderNode(result.root.children[0], "folder-200");
+    expect(toFolderChildIds(result.root.children[0].children)).toEqual(["page-300"]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("continues folder descendants from depth 10 page containers", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-200", title: "Depth Ten Page", type: "page", parentId: "folder-100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-300", title: "Depth Eleven Child", type: "page", parentId: "page-200", depth: 1, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-200",
+          title: "Depth Ten Page",
+          version: { number: 2 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-200/Depth+Ten+Page" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "Depth Eleven Child",
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Depth+Eleven+Child" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-200/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-200",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300"
+    ]);
+    expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
+      { pageId: "page-200", parentId: "folder-100", depth: 10 },
+      { pageId: "page-300", parentId: "page-200", depth: 11 }
+    ]);
+    expect(toFolderChildIds(result.root.children)).toEqual(["page-200"]);
+    const depthTenPage = result.root.children[0];
+    expect("pageId" in depthTenPage ? depthTenPage.pageId : "").toBe("page-200");
+    expect(toFolderChildIds(depthTenPage.children)).toEqual(["page-300"]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("keeps root sibling order while adding recursively fetched folder children", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "folder-200", title: "Depth Ten Folder", type: "folder", parentId: "folder-100", depth: 10, childPosition: 0 },
+            { id: "page-400", title: "Root Sibling", type: "page", parentId: "folder-100", depth: 1, childPosition: 1 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-300", title: "Nested Child", type: "page", parentId: "folder-200", depth: 1, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-400",
+          title: "Root Sibling",
+          version: { number: 4 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Root+Sibling" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "Nested Child",
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Nested+Child" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(toFolderChildIds(result.root.children)).toEqual(["folder-200", "page-400"]);
+    expectFolderNode(result.root.children[0], "folder-200");
+    expect(toFolderChildIds(result.root.children[0].children)).toEqual(["page-300"]);
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-400", "page-300"]);
+    expect(result.errors).toEqual([]);
+  });
+
   it("records folder descendant page detail errors and continues pulling accessible pages", async () => {
     const { transport } = createSequencedTransport([
       {
