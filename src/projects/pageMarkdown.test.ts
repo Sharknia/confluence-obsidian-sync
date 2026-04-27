@@ -4,7 +4,12 @@ import type {
   ConfluencePageTreeNode,
   ConfluencePageTreePage,
 } from "../confluence/pageTree";
-import { buildPageMarkdownFiles, createSafeMarkdownFileName } from "./pageMarkdown";
+import {
+  buildPageMarkdownFiles,
+  calculateMarkdownBodyHash,
+  createSafeMarkdownFileName,
+  parsePageMarkdownMetadata,
+} from "./pageMarkdown";
 
 function createPage(overrides: Partial<ConfluencePageTreePage>): ConfluencePageTreePage {
   return {
@@ -72,12 +77,82 @@ confluenceTitle: "Root"
 confluenceVersion: 1
 confluenceSourceUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/100/Root"
 confluenceParentId: null
+confluenceContentHash: "${calculateMarkdownBodyHash("Hello\n")}"
 ---
 
 Hello
 `,
       },
     ]);
+  });
+
+  it("stores a stable content hash for the generated markdown body", async () => {
+    const rootPage = createPage({ pageId: "100", title: "Root", bodyStorageValue: "<p>Hello</p>" });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+
+    const files = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(files[0]?.content).toContain(`confluenceContentHash: "${calculateMarkdownBodyHash("Hello\n")}"`);
+  });
+
+  it("parses flat Confluence frontmatter metadata and markdown body", () => {
+    const content = `---
+confluencePageId: "100"
+confluenceVersion: 3
+confluenceContentHash: "sha256:abc123"
+---
+
+Hello
+`;
+
+    expect(parsePageMarkdownMetadata(content)).toEqual({
+      pageId: "100",
+      versionNumber: 3,
+      contentHash: "sha256:abc123",
+      bodyMarkdown: "Hello\n",
+    });
+  });
+
+  it("parses legacy pageId frontmatter without content hash", () => {
+    const content = `---
+pageId: "200"
+---
+
+Legacy body
+`;
+
+    expect(parsePageMarkdownMetadata(content)).toEqual({
+      pageId: "200",
+      versionNumber: null,
+      contentHash: null,
+      bodyMarkdown: "Legacy body\n",
+    });
+  });
+
+  it("parses nested legacy Confluence frontmatter without content hash", () => {
+    const content = `---
+confluence:
+  pageId: "300"
+---
+
+Nested legacy body
+`;
+
+    expect(parsePageMarkdownMetadata(content)).toEqual({
+      pageId: "300",
+      versionNumber: null,
+      contentHash: null,
+      bodyMarkdown: "Nested legacy body\n",
+    });
+  });
+
+  it("returns null when frontmatter does not contain a Confluence page id", () => {
+    expect(parsePageMarkdownMetadata("---\ntitle: Notes\n---\n\nBody\n")).toBeNull();
   });
 
   it("adds numeric suffixes when the same title collides", async () => {

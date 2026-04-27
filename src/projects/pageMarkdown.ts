@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type {
   ConfluenceFolderContentTreeNode,
   ConfluencePageTreeNode,
@@ -45,6 +46,13 @@ export interface PageMarkdownFile {
   warnings: ConfluenceStorageToMarkdownWarning[];
 }
 
+export interface ParsedPageMarkdownMetadata {
+  pageId: string;
+  versionNumber: number | null;
+  contentHash: string | null;
+  bodyMarkdown: string;
+}
+
 export interface BuildPageMarkdownFilesInput {
   projectRootPath: string;
   root: ConfluencePageTreeNode | ConfluenceFolderContentTreeNode;
@@ -55,6 +63,41 @@ export interface BuildPageMarkdownFilesInput {
 
 export function createSafeMarkdownFileName(title: string, pageId: string): string {
   return `${createSafeFileBaseName(title, `confluence-page-${createSafePageIdSegment(pageId)}`)}${MARKDOWN_FILE_EXTENSION}`;
+}
+
+const FRONTMATTER_PATTERN = /^\s*---\n([\s\S]*?)\n---\n?/u;
+
+export function calculateMarkdownBodyHash(markdownBody: string): string {
+  return `sha256:${createHash("sha256").update(markdownBody, "utf8").digest("hex")}`;
+}
+
+export function parsePageMarkdownMetadata(markdown: string): ParsedPageMarkdownMetadata | null {
+  const frontmatterMatch = markdown.match(FRONTMATTER_PATTERN);
+
+  if (frontmatterMatch === null) {
+    return null;
+  }
+
+  const frontmatter = frontmatterMatch[1] ?? "";
+  const pageId =
+    readQuotedFrontmatterValue(frontmatter, "confluencePageId") ??
+    readQuotedFrontmatterValue(frontmatter, "pageId") ??
+    readNestedConfluencePageId(frontmatter);
+
+  if (pageId === null) {
+    return null;
+  }
+
+  return {
+    pageId,
+    versionNumber: readNumericFrontmatterValue(frontmatter, "confluenceVersion"),
+    contentHash: readQuotedFrontmatterValue(frontmatter, "confluenceContentHash"),
+    bodyMarkdown: removeFrontmatterBodySeparator(markdown.slice(frontmatterMatch[0].length)),
+  };
+}
+
+function removeFrontmatterBodySeparator(markdownBody: string): string {
+  return markdownBody.startsWith("\n") ? markdownBody.slice(1) : markdownBody;
 }
 
 export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput): Promise<PageMarkdownFile[]> {
@@ -99,13 +142,14 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
       resolvePageLinkTarget: (contentTitle) => linkTargetsByTitle.get(contentTitle) ?? contentTitle,
       resolveJiraIssueUrl: (issueKey) => createJiraIssueUrl(page.sourceUrl, issueKey),
     });
+    const markdownBody = `${markdownConversion.markdown}\n`;
 
     files.push({
       pageId: page.pageId,
       title: page.title,
       vaultPath,
       warnings: markdownConversion.warnings,
-      content: `${createFrontmatter(page)}\n\n${markdownConversion.markdown}\n`,
+      content: `${createFrontmatter(page, markdownBody)}\n\n${markdownBody}`,
     });
   }
 
@@ -297,32 +341,49 @@ async function canUseCandidatePath(
   }
 
   try {
-    return extractConfluencePageIdFromMarkdown(await readExistingFile(candidatePath)) === pageId;
+    return parsePageMarkdownMetadata(await readExistingFile(candidatePath))?.pageId === pageId;
   } catch {
     return false;
   }
-}
-
-function extractConfluencePageIdFromMarkdown(markdown: string): string | null {
-  const pageIdMatch =
-    markdown.match(/^\s*---[\s\S]*?\n\s*confluencePageId:\s*"([^"]+)"[\s\S]*?\n---/u) ??
-    markdown.match(/^\s*---[\s\S]*?\n\s*pageId:\s*"([^"]+)"[\s\S]*?\n---/u);
-
-  return pageIdMatch?.[1] ?? null;
 }
 
 function createReservedPathKey(vaultPath: string): string {
   return vaultPath.toLocaleLowerCase("en-US");
 }
 
-function createFrontmatter(page: ConfluencePageTreePage): string {
+function createFrontmatter(page: ConfluencePageTreePage, markdownBody: string): string {
   return `---
 confluencePageId: ${JSON.stringify(page.pageId)}
 confluenceTitle: ${JSON.stringify(page.title)}
 confluenceVersion: ${page.versionNumber}
 confluenceSourceUrl: ${JSON.stringify(page.sourceUrl)}
 confluenceParentId: ${page.parentId === null ? "null" : JSON.stringify(page.parentId)}
+confluenceContentHash: ${JSON.stringify(calculateMarkdownBodyHash(markdownBody))}
 ---`;
+}
+
+function readQuotedFrontmatterValue(frontmatter: string, key: string): string | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = frontmatter.match(new RegExp(`^\\s*${escapedKey}:\\s*"([^"]*)"\\s*$`, "mu"));
+
+  return match?.[1] ?? null;
+}
+
+function readNumericFrontmatterValue(frontmatter: string, key: string): number | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = frontmatter.match(new RegExp(`^\\s*${escapedKey}:\\s*(\\d+)\\s*$`, "mu"));
+
+  if (match?.[1] === undefined) {
+    return null;
+  }
+
+  return Number.parseInt(match[1], 10);
+}
+
+function readNestedConfluencePageId(frontmatter: string): string | null {
+  const match = frontmatter.match(/^confluence:\s*\n(?:\s+[A-Za-z0-9_-]+:\s*.*\n)*?\s+pageId:\s*"([^"]*)"\s*$/mu);
+
+  return match?.[1] ?? null;
 }
 
 function createJiraIssueUrl(sourceUrl: string, issueKey: string): string | null {
