@@ -164,17 +164,28 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 
 ### 목표
 
-사용자가 현재 프로젝트 상태와 동기화 작업을 이해할 수 있게 한다.
+Obsidian 안에서 사용자가 현재 Confluence 프로젝트 상태와 동기화 작업을 이해할 수 있게 한다.
+
+### 표시 위치
+
+- 명령 팔레트의 `Open Sync Panel` 명령으로 여는 Obsidian 전용 workspace panel에 표시한다.
+- 설정 탭은 연결 정보와 프로젝트 생성 전용으로 유지한다.
+- 최근 Pull 상태는 `Pull Reports/latest.md`를 읽어 요약한다.
 
 ### 완료 기준
 
 - 현재 프로젝트를 표시한다.
-- 루트 페이지 링크를 표시한다.
+- 루트 페이지 또는 루트 폴더 링크를 표시한다.
 - 마지막 Pull 시각을 표시한다.
 - Pull Tree 버튼을 제공한다.
 - Push Current Page 버튼을 제공한다.
 - 최근 오류를 표시한다.
+- 최근 Pull 리포트를 열 수 있는 버튼을 제공한다.
 - 복잡한 diff UI는 제외한다.
+
+### 구현 계획
+
+- [Sync Panel MVP Implementation Plan](superpowers/plans/2026-04-27-sync-panel-mvp.md)
 
 ## Epic 8. 현재 Markdown 문서 Push
 
