@@ -62,7 +62,9 @@ export function renderSyncPanelContent(
 
   const actionSectionEl = createElement(containerEl, "div");
   actionSectionEl.className = "confluence-sync-panel-actions";
-  appendButton(actionSectionEl, "Pull Tree", actions.onPullTree, !state.canRunProjectActions);
+  const actionStatusEl = appendTextElement(actionSectionEl, "p", "");
+  actionStatusEl.setAttribute("aria-live", "polite");
+  appendPullButton(actionSectionEl, actions.onPullTree, !state.canRunProjectActions, actionStatusEl);
   appendButton(actionSectionEl, "Push Current Page", actions.onPushCurrentPage, !state.canRunProjectActions);
   containerEl.append(actionSectionEl);
 }
@@ -113,6 +115,47 @@ function appendButton(
   containerEl.append(buttonEl);
 
   return buttonEl;
+}
+
+function appendPullButton(
+  containerEl: HTMLElement,
+  onClick: () => void | Promise<void>,
+  disabled: boolean,
+  statusEl: HTMLElement
+): HTMLButtonElement {
+  const buttonEl = createElement(containerEl, "button");
+  buttonEl.textContent = "Pull Tree";
+  buttonEl.disabled = disabled;
+  buttonEl.addEventListener("click", () => {
+    if (buttonEl.disabled) {
+      return;
+    }
+
+    void runPullAction(buttonEl, statusEl, onClick);
+  });
+  containerEl.append(buttonEl);
+
+  return buttonEl;
+}
+
+async function runPullAction(
+  buttonEl: HTMLButtonElement,
+  statusEl: HTMLElement,
+  onClick: () => void | Promise<void>
+): Promise<void> {
+  buttonEl.disabled = true;
+  buttonEl.textContent = "Pull 진행 중...";
+  statusEl.textContent = "Pull 진행 중입니다...";
+
+  try {
+    await onClick();
+    statusEl.textContent = "Pull 완료";
+  } catch {
+    statusEl.textContent = "Pull 실패";
+  } finally {
+    buttonEl.disabled = false;
+    buttonEl.textContent = "Pull Tree";
+  }
 }
 
 function createElement<K extends keyof HTMLElementTagNameMap>(

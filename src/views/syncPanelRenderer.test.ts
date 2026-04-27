@@ -72,6 +72,43 @@ describe("renderSyncPanelContent", () => {
     expect(actions.onOpenLatestReport).toHaveBeenCalledOnce();
   });
 
+  it("disables Pull Tree while pull is running and enables it after completion", async () => {
+    const containerEl = createContainer();
+    let finishPull: (() => void) | undefined;
+    const actions: SyncPanelActions = {
+      onPullTree: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPull = resolve;
+          })
+      ),
+      onPushCurrentPage: vi.fn(),
+      onOpenRootLink: vi.fn(),
+      onOpenLatestReport: vi.fn()
+    };
+
+    renderSyncPanelContent(containerEl, createState(), actions);
+
+    const pullButton = Array.from(containerEl.querySelectorAll("button")).find(
+      (button) => button.textContent === "Pull Tree"
+    );
+
+    pullButton?.click();
+    pullButton?.click();
+
+    expect(actions.onPullTree).toHaveBeenCalledOnce();
+    expect(pullButton?.disabled).toBe(true);
+    expect(pullButton?.textContent).toBe("Pull 진행 중...");
+    expect(containerEl.textContent).toContain("Pull 진행 중입니다...");
+
+    finishPull?.();
+    await Promise.resolve();
+
+    expect(pullButton?.disabled).toBe(false);
+    expect(pullButton?.textContent).toBe("Pull Tree");
+    expect(containerEl.textContent).toContain("Pull 완료");
+  });
+
   it("disables project actions when no project exists", () => {
     const containerEl = createContainer();
 
