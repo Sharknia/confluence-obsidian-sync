@@ -119,6 +119,10 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 - folder descendants API pagination을 처리한다.
 - 일부 페이지 조회 실패 시 전체 작업을 중단하지 않고 오류 목록을 남긴다.
 
+### 구현 계획
+
+- [Root Folder Tree Pull Implementation Plan](superpowers/plans/2026-04-27-root-folder-tree-pull.md)
+
 ## Epic 5. Confluence 본문을 Markdown 파일로 저장
 
 ### 목표

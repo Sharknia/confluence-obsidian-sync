@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam } from "obsidian";
-import { fetchConfluencePageTree } from "./pageTree";
+import { fetchConfluencePageTree, fetchConfluenceRootContentTree } from "./pageTree";
 import type { ConfluenceRequestResult, ConfluenceRequestTransport } from "./requestTransport";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
@@ -35,6 +35,19 @@ function createSequencedTransport(responses: ConfluenceRequestResult[]): {
       return Promise.resolve(response);
     }
   };
+}
+
+function toFolderChildIds(children: Array<{ pageId?: string; contentId?: string }>): string[] {
+  return children.map((child) => child.pageId ?? child.contentId ?? "missing-id");
+}
+
+function expectFolderNode(
+  node: { nodeType?: string; contentId?: string; children?: unknown[] },
+  expectedContentId: string
+): asserts node is { nodeType: "folder"; contentId: string; children: Array<{ pageId?: string; contentId?: string }> } {
+  expect(node.nodeType).toBe("folder");
+  expect(node.contentId).toBe(expectedContentId);
+  expect(Array.isArray(node.children)).toBe(true);
 }
 
 describe("fetchConfluencePageTree", () => {
@@ -464,5 +477,246 @@ describe("fetchConfluencePageTree", () => {
         message: "Confluence 페이지(200)의 부모(folder-1)를 페이지 트리에 연결할 수 없습니다."
       }
     ]);
+  });
+
+  it("fetches paginated folder descendants and preserves folder/page hierarchy", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "folder-200", title: "Design", type: "folder", parentId: "folder-100", depth: 1, childPosition: 0 },
+            { id: "page-300", title: "Overview", type: "page", parentId: "folder-200", depth: 2, childPosition: 0 }
+          ],
+          _links: { next: "/wiki/api/v2/folders/folder-100/descendants?limit=100&cursor=next-token" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-400", title: "Root Child", type: "page", parentId: "folder-100", depth: 1, childPosition: 1 },
+            {
+              id: "whiteboard-500",
+              title: "Ignored Whiteboard",
+              type: "whiteboard",
+              parentId: "folder-100",
+              depth: 1,
+              childPosition: 2
+            }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "Overview",
+          version: { number: 7 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Overview" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-400",
+          title: "Root Child",
+          version: { number: 9 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Root+Child" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(
+      createSettings({
+        currentProject: {
+          projectName: "Folder Root",
+          spaceId: "SPACE",
+          rootContentType: "folder",
+          rootContentId: "folder-100",
+          rootPageId: "",
+          rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/folders/folder-100",
+          localFolderPath: "confluence/Folder Root",
+          manifestPath: "confluence/Folder Root/.confluence-sync/manifest.json"
+        }
+      }),
+      "folder",
+      "folder-100",
+      transport
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&cursor=next-token",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-400"
+    ]);
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-300", "page-400"]);
+    expect(result.root).toMatchObject({
+      nodeType: "folder",
+      contentId: "folder-100",
+      title: "Folder Root",
+      parentId: null,
+      depth: 0,
+      childPosition: 0
+    });
+    expectFolderNode(result.root, "folder-100");
+    expect(toFolderChildIds(result.root.children)).toEqual(["folder-200", "page-400"]);
+    const designFolder = result.root.children[0];
+    expectFolderNode(designFolder, "folder-200");
+    expect(toFolderChildIds(designFolder.children)).toEqual(["page-300"]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("records folder descendant page detail errors and continues pulling accessible pages", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            {
+              id: "folder-200",
+              title: "Nested Folder",
+              type: "folder",
+              parentId: "folder-100",
+              depth: 1,
+              childPosition: 0
+            },
+            { id: "page-200", title: "Forbidden", type: "page", parentId: "folder-200", depth: 2, childPosition: 0 },
+            { id: "page-300", title: "Accessible", type: "page", parentId: "folder-200", depth: 2, childPosition: 1 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 403,
+        json: {}
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "Accessible",
+          version: { number: 4 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Accessible" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-300"]);
+    expect(toFolderChildIds(result.root.children)).toEqual(["folder-200"]);
+    const nestedFolder = result.root.children[0];
+    expectFolderNode(nestedFolder, "folder-200");
+    expect(toFolderChildIds(nestedFolder.children)).toEqual(["page-300"]);
+    expect(result.errors).toEqual([
+      {
+        pageId: "page-200",
+        title: "Forbidden",
+        reason: "permission-denied",
+        message: "Confluence 페이지 트리에 접근할 권한이 없습니다."
+      }
+    ]);
+  });
+
+  it("records pages under detached folder branches as errors instead of successful pages", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-200", title: "Forbidden Parent", type: "page", parentId: "folder-100", depth: 1, childPosition: 0 },
+            { id: "folder-300", title: "Detached Folder", type: "folder", parentId: "page-200", depth: 2, childPosition: 0 },
+            { id: "page-400", title: "Detached Child", type: "page", parentId: "folder-300", depth: 3, childPosition: 0 },
+            { id: "page-500", title: "Accessible Sibling", type: "page", parentId: "folder-100", depth: 1, childPosition: 1 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 403,
+        json: {}
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-400",
+          title: "Detached Child",
+          version: { number: 5 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Detached+Child" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-500",
+          title: "Accessible Sibling",
+          version: { number: 6 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-500/Accessible+Sibling" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-500"]);
+    expect(toFolderChildIds(result.root.children)).toEqual(["page-500"]);
+    expect(result.errors).toEqual([
+      {
+        pageId: "page-200",
+        title: "Forbidden Parent",
+        reason: "permission-denied",
+        message: "Confluence 페이지 트리에 접근할 권한이 없습니다."
+      },
+      {
+        pageId: "folder-300",
+        title: "Detached Folder",
+        reason: "invalid-response",
+        message: "Confluence 콘텐츠(folder-300)의 부모(page-200)를 페이지 트리에 연결할 수 없습니다."
+      },
+      {
+        pageId: "page-400",
+        title: "Detached Child",
+        reason: "invalid-response",
+        message: "Confluence 콘텐츠(page-400)는 루트 폴더(folder-100)에서 도달할 수 없습니다."
+      }
+    ]);
+  });
+
+  it("returns a critical failure when folder descendants pagination fails", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 500,
+        json: {}
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100"
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "api-error",
+      message: "Confluence API 오류가 발생했습니다. HTTP 500"
+    });
   });
 });

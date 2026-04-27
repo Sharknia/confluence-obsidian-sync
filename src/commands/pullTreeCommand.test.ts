@@ -65,9 +65,27 @@ describe("runPullTreeCommand", () => {
     expect(notices).toEqual(["Pull Tree 실행 전에 설정 화면에서 루트 콘텐츠 기반 프로젝트를 생성하세요."]);
   });
 
-  it("루트 콘텐츠가 폴더이면 Epic 4 확장 대상임을 안내한다", async () => {
+  it("루트 콘텐츠가 폴더이면 folder rootContentId로 페이지 트리를 조회한다", async () => {
     const notices: string[] = [];
-    const fetchTree: PullTreeFetcher = () => Promise.reject(new Error("fetchTree should not be called"));
+    const fetchedRoots: Array<{ rootContentType: "page" | "folder"; rootContentId: string }> = [];
+    const fetchTree: PullTreeFetcher = (_settings, rootContentType, rootContentId) => {
+      fetchedRoots.push({ rootContentType, rootContentId });
+
+      return Promise.resolve({
+        ok: true,
+        root: {
+          nodeType: "folder",
+          contentId: "folder-100",
+          title: "Folder Root",
+          parentId: null,
+          depth: 0,
+          childPosition: 0,
+          children: []
+        },
+        pages: [],
+        errors: []
+      });
+    };
 
     await runPullTreeCommand({
       settings: createSettings({
@@ -76,7 +94,7 @@ describe("runPullTreeCommand", () => {
           spaceId: "SPACE",
           rootContentType: "folder",
           rootContentId: "folder-100",
-          rootPageId: "100",
+          rootPageId: "",
           rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/folders/folder-100",
           localFolderPath: "confluence/Folder Root",
           manifestPath: "confluence/Folder Root/.confluence-sync/manifest.json"
@@ -86,14 +104,15 @@ describe("runPullTreeCommand", () => {
       showNotice: (message) => notices.push(message)
     });
 
-    expect(notices).toEqual(["루트 폴더 Pull은 Epic 4 확장에서 구현됩니다."]);
+    expect(fetchedRoots).toEqual([{ rootContentType: "folder", rootContentId: "folder-100" }]);
+    expect(notices).toEqual(["Confluence 페이지 트리를 가져왔습니다: 0개"]);
   });
 
   it("페이지 트리 조회에 성공하면 루트 페이지 ID로 조회하고 페이지와 실패 개수를 안내한다", async () => {
     const notices: string[] = [];
-    const fetchedRootPageIds: string[] = [];
-    const fetchTree: PullTreeFetcher = (_settings, rootPageId) => {
-      fetchedRootPageIds.push(rootPageId);
+    const fetchedRoots: Array<{ rootContentType: "page" | "folder"; rootContentId: string }> = [];
+    const fetchTree: PullTreeFetcher = (_settings, rootContentType, rootContentId) => {
+      fetchedRoots.push({ rootContentType, rootContentId });
 
       return Promise.resolve({
         ok: true,
@@ -135,7 +154,7 @@ describe("runPullTreeCommand", () => {
       showNotice: (message) => notices.push(message)
     });
 
-    expect(fetchedRootPageIds).toEqual(["100"]);
+    expect(fetchedRoots).toEqual([{ rootContentType: "page", rootContentId: "100" }]);
     expect(notices).toEqual(["Confluence 페이지 트리를 가져왔습니다: 1개, 실패 1개"]);
   });
 

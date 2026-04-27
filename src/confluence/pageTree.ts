@@ -55,6 +55,34 @@ export interface ConfluencePageTreeFailure {
 
 export type ConfluencePageTreeResult = ConfluencePageTreeSuccess | ConfluencePageTreeFailure;
 
+export type ConfluenceRootContentType = "page" | "folder";
+
+export type ConfluenceFolderContentTreeNode = ConfluenceFolderPageTreeNode | ConfluenceFolderTreeNode;
+
+export interface ConfluenceFolderPageTreeNode extends ConfluencePageTreePage {
+  children: ConfluenceFolderContentTreeNode[];
+}
+
+export interface ConfluenceFolderTreeNode {
+  nodeType: "folder";
+  contentId: string;
+  title: string;
+  parentId: string | null;
+  depth: number;
+  childPosition: number;
+  children: ConfluenceFolderContentTreeNode[];
+}
+
+export interface ConfluenceFolderTreeSuccess {
+  ok: true;
+  root: ConfluenceFolderTreeNode;
+  pages: ConfluencePageTreePage[];
+  errors: ConfluencePageTreeError[];
+}
+
+export type ConfluenceFolderTreeResult = ConfluenceFolderTreeSuccess | ConfluencePageTreeFailure;
+export type ConfluenceRootContentTreeResult = ConfluencePageTreeResult | ConfluenceFolderTreeResult;
+
 interface PageDetailApiResponse {
   id?: unknown;
   title?: unknown;
@@ -67,20 +95,29 @@ interface PageDetailApiResponse {
 }
 
 interface DescendantsApiResponse {
-  results?: unknown;
+  results?: unknown[];
   _links?: {
     next?: unknown;
   } | null;
 }
 
-interface DescendantPageSummary {
+interface BaseDescendantContentSummary {
   id: string;
   title: string;
-  type: string;
   parentId: string;
   depth: number;
   childPosition: number;
 }
+
+interface DescendantPageSummary extends BaseDescendantContentSummary {
+  type: "page";
+}
+
+interface DescendantFolderSummary extends BaseDescendantContentSummary {
+  type: "folder";
+}
+
+type DescendantContentSummary = DescendantPageSummary | DescendantFolderSummary;
 
 interface DescendantPageFetchResult {
   pages: ConfluencePageTreePage[];
@@ -91,6 +128,14 @@ interface PageTreeBuildResult {
   root: ConfluencePageTreeNode;
   errors: ConfluencePageTreeError[];
 }
+
+interface FolderTreeBuildResult {
+  root: ConfluenceFolderTreeNode;
+  errors: ConfluencePageTreeError[];
+  reachableContentIds: Set<string>;
+}
+
+type OrderedDescendantContentSummary = DescendantContentSummary & { originalIndex: number };
 
 function createAuthorizationHeader(settings: ConfluenceSyncSettings): string {
   return buildBasicAuthorizationHeader(settings.userEmail, settings.apiToken);
@@ -259,7 +304,24 @@ function isDescendantPageSummary(value: unknown): value is DescendantPageSummary
   return (
     typeof summary.id === "string" &&
     typeof summary.title === "string" &&
-    typeof summary.type === "string" &&
+    summary.type === "page" &&
+    typeof summary.parentId === "string" &&
+    typeof summary.depth === "number" &&
+    typeof summary.childPosition === "number"
+  );
+}
+
+function isDescendantContentSummary(value: unknown): value is DescendantContentSummary {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const summary = value as DescendantContentSummary;
+
+  return (
+    typeof summary.id === "string" &&
+    typeof summary.title === "string" &&
+    (summary.type === "page" || summary.type === "folder") &&
     typeof summary.parentId === "string" &&
     typeof summary.depth === "number" &&
     typeof summary.childPosition === "number"
@@ -355,6 +417,31 @@ function toDescendantPageSummaries(response: DescendantsApiResponse): Descendant
   return summaries;
 }
 
+function toDescendantContentSummaries(
+  response: DescendantsApiResponse
+): DescendantContentSummary[] | ConfluencePageTreeFailure {
+  const summaries: DescendantContentSummary[] = [];
+
+  for (const result of response.results ?? []) {
+    if (!isDescendantResultWithType(result)) {
+      return buildFailure("invalid-response", "Confluence 하위 콘텐츠 목록 형식이 올바르지 않습니다.");
+    }
+
+    // Folder root에서는 구조 보존에 필요한 page/folder만 사용한다.
+    if (result.type !== "page" && result.type !== "folder") {
+      continue;
+    }
+
+    if (!isDescendantContentSummary(result)) {
+      return buildFailure("invalid-response", "Confluence 하위 콘텐츠 목록 형식이 올바르지 않습니다.");
+    }
+
+    summaries.push(result);
+  }
+
+  return summaries;
+}
+
 async function fetchDescendantPageSummaries(
   settings: ConfluenceSyncSettings,
   rootPageId: string,
@@ -408,6 +495,59 @@ async function fetchDescendantPageSummaries(
   return summaries;
 }
 
+async function fetchFolderDescendantContentSummaries(
+  settings: ConfluenceSyncSettings,
+  rootFolderId: string,
+  transport: ConfluenceRequestTransport
+): Promise<DescendantContentSummary[] | ConfluencePageTreeFailure> {
+  const summaries: DescendantContentSummary[] = [];
+  let nextRequestPath: string | null = `/wiki/api/v2/folders/${encodeURIComponent(rootFolderId)}/descendants?limit=100`;
+
+  while (nextRequestPath !== null) {
+    const descendantsResponse = await requestConfluence(
+      transport,
+      createConfluenceGetRequest(settings, nextRequestPath)
+    );
+
+    if (isPageTreeFailure(descendantsResponse)) {
+      return descendantsResponse;
+    }
+
+    if (descendantsResponse.status !== 200) {
+      return classifyHttpFailure(descendantsResponse.status);
+    }
+
+    if (!isDescendantsApiResponse(descendantsResponse.json)) {
+      return buildFailure("invalid-response", "Confluence descendants 응답 형식이 올바르지 않습니다.");
+    }
+
+    const contentSummaries = toDescendantContentSummaries(descendantsResponse.json);
+
+    if (isPageTreeFailure(contentSummaries)) {
+      return contentSummaries;
+    }
+
+    summaries.push(...contentSummaries);
+
+    const rawNextLink = readNextLink(descendantsResponse.json);
+
+    if (rawNextLink === null) {
+      nextRequestPath = null;
+      continue;
+    }
+
+    const nextApiPath = toApiPath(settings, rawNextLink);
+
+    if (isPageTreeFailure(nextApiPath)) {
+      return nextApiPath;
+    }
+
+    nextRequestPath = nextApiPath;
+  }
+
+  return summaries;
+}
+
 function toDescendantPage(
   settings: ConfluenceSyncSettings,
   summary: DescendantPageSummary,
@@ -422,6 +562,44 @@ function toDescendantPage(
     depth: summary.depth,
     childPosition: summary.childPosition
   };
+}
+
+function toRootFolder(settings: ConfluenceSyncSettings, rootFolderId: string): ConfluenceFolderTreeNode {
+  const currentProject = settings.currentProject;
+  const title =
+    currentProject?.rootContentType === "folder" && currentProject.rootContentId === rootFolderId
+      ? currentProject.projectName
+      : `Confluence Folder ${rootFolderId}`;
+
+  return {
+    nodeType: "folder",
+    contentId: rootFolderId,
+    title,
+    parentId: null,
+    depth: 0,
+    childPosition: 0,
+    children: []
+  };
+}
+
+function toFolderTreeNode(summary: DescendantFolderSummary): ConfluenceFolderTreeNode {
+  return {
+    nodeType: "folder",
+    contentId: summary.id,
+    title: summary.title,
+    parentId: summary.parentId,
+    depth: summary.depth,
+    childPosition: summary.childPosition,
+    children: []
+  };
+}
+
+function isFolderContentPageNode(node: ConfluenceFolderContentTreeNode): node is ConfluenceFolderPageTreeNode {
+  return "pageId" in node;
+}
+
+function getFolderContentNodeId(node: ConfluenceFolderContentTreeNode): string {
+  return isFolderContentPageNode(node) ? node.pageId : node.contentId;
 }
 
 async function fetchDescendantPages(
@@ -514,6 +692,128 @@ function sortPageTreeChildren(node: ConfluencePageTreeNode): void {
   }
 }
 
+function buildFolderContentTree(
+  rootNode: ConfluenceFolderTreeNode,
+  orderedDescendants: OrderedDescendantContentSummary[],
+  descendantPages: ConfluencePageTreePage[]
+): FolderTreeBuildResult {
+  const rootNodeWithChildren: ConfluenceFolderTreeNode = {
+    ...rootNode,
+    children: []
+  };
+  const errors: ConfluencePageTreeError[] = [];
+  const nodesByContentId = new Map<string, ConfluenceFolderContentTreeNode>([
+    [rootNodeWithChildren.contentId, rootNodeWithChildren]
+  ]);
+  const originalIndexesByContentId = new Map<string, number>([[rootNodeWithChildren.contentId, -1]]);
+  const erroredContentIds = new Set<string>();
+
+  for (const summary of orderedDescendants) {
+    originalIndexesByContentId.set(summary.id, summary.originalIndex);
+
+    if (summary.type === "folder") {
+      const folderNode = toFolderTreeNode(summary);
+      nodesByContentId.set(folderNode.contentId, folderNode);
+      continue;
+    }
+
+    const page = descendantPages.find((candidate) => candidate.pageId === summary.id);
+
+    if (page !== undefined) {
+      nodesByContentId.set(page.pageId, {
+        ...page,
+        children: []
+      });
+    }
+  }
+
+  const childNodes = orderedDescendants.map((summary) => nodesByContentId.get(summary.id));
+
+  for (const node of childNodes) {
+    if (node === undefined) {
+      continue;
+    }
+
+    const parentNode = nodesByContentId.get(node.parentId ?? "");
+
+    if (parentNode === undefined) {
+      const contentId = getFolderContentNodeId(node);
+      erroredContentIds.add(contentId);
+      errors.push(
+        buildPageTreeError(
+          contentId,
+          node.title,
+          "invalid-response",
+          `Confluence 콘텐츠(${contentId})의 부모(${node.parentId ?? "unknown"})를 페이지 트리에 연결할 수 없습니다.`
+        )
+      );
+      continue;
+    }
+
+    parentNode.children.push(node);
+  }
+
+  sortFolderContentTreeChildren(rootNodeWithChildren, originalIndexesByContentId);
+  const reachableContentIds = collectReachableFolderContentIds(rootNodeWithChildren);
+
+  for (const [contentId, node] of nodesByContentId) {
+    if (contentId === rootNodeWithChildren.contentId || reachableContentIds.has(contentId) || erroredContentIds.has(contentId)) {
+      continue;
+    }
+
+    errors.push(
+      buildPageTreeError(
+        contentId,
+        node.title,
+        "invalid-response",
+        `Confluence 콘텐츠(${contentId})는 루트 폴더(${rootNodeWithChildren.contentId})에서 도달할 수 없습니다.`
+      )
+    );
+  }
+
+  return { root: rootNodeWithChildren, errors, reachableContentIds };
+}
+
+function collectReachableFolderContentIds(rootNode: ConfluenceFolderContentTreeNode): Set<string> {
+  const reachableContentIds = new Set<string>();
+  const pendingNodes: ConfluenceFolderContentTreeNode[] = [rootNode];
+
+  while (pendingNodes.length > 0) {
+    const node = pendingNodes.pop();
+
+    if (node === undefined) {
+      continue;
+    }
+
+    reachableContentIds.add(getFolderContentNodeId(node));
+    pendingNodes.push(...node.children);
+  }
+
+  return reachableContentIds;
+}
+
+function sortFolderContentTreeChildren(
+  node: ConfluenceFolderContentTreeNode,
+  originalIndexesByContentId: Map<string, number>
+): void {
+  node.children.sort((leftNode, rightNode) => {
+    const childPositionDifference = leftNode.childPosition - rightNode.childPosition;
+
+    if (childPositionDifference !== 0) {
+      return childPositionDifference;
+    }
+
+    return (
+      (originalIndexesByContentId.get(getFolderContentNodeId(leftNode)) ?? 0) -
+      (originalIndexesByContentId.get(getFolderContentNodeId(rightNode)) ?? 0)
+    );
+  });
+
+  for (const child of node.children) {
+    sortFolderContentTreeChildren(child, originalIndexesByContentId);
+  }
+}
+
 export async function fetchConfluencePageTree(
   settings: ConfluenceSyncSettings,
   rootPageId: string,
@@ -550,4 +850,48 @@ export async function fetchConfluencePageTree(
     pages: [rootPage, ...descendantPages.pages],
     errors: [...descendantPages.errors, ...pageTree.errors]
   };
+}
+
+export async function fetchConfluenceFolderTree(
+  settings: ConfluenceSyncSettings,
+  rootFolderId: string,
+  transport: ConfluenceRequestTransport
+): Promise<ConfluenceFolderTreeResult> {
+  const rootNode = toRootFolder(settings, rootFolderId);
+  const descendantSummaries = await fetchFolderDescendantContentSummaries(settings, rootFolderId, transport);
+
+  if (isPageTreeFailure(descendantSummaries)) {
+    return descendantSummaries;
+  }
+
+  const orderedDescendants = descendantSummaries.map((summary, originalIndex) => ({
+    ...summary,
+    originalIndex
+  }));
+  const descendantPageSummaries = orderedDescendants.filter(
+    (summary): summary is DescendantPageSummary & OrderedDescendantContentSummary => summary.type === "page"
+  );
+  const descendantPages = await fetchDescendantPages(settings, descendantPageSummaries, transport);
+  const folderTree = buildFolderContentTree(rootNode, orderedDescendants, descendantPages.pages);
+  const reachablePages = descendantPages.pages.filter((page) => folderTree.reachableContentIds.has(page.pageId));
+
+  return {
+    ok: true,
+    root: folderTree.root,
+    pages: reachablePages,
+    errors: [...descendantPages.errors, ...folderTree.errors]
+  };
+}
+
+export async function fetchConfluenceRootContentTree(
+  settings: ConfluenceSyncSettings,
+  rootContentType: ConfluenceRootContentType,
+  rootContentId: string,
+  transport: ConfluenceRequestTransport
+): Promise<ConfluenceRootContentTreeResult> {
+  if (rootContentType === "page") {
+    return fetchConfluencePageTree(settings, rootContentId, transport);
+  }
+
+  return fetchConfluenceFolderTree(settings, rootContentId, transport);
 }

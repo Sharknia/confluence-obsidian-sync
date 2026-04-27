@@ -1,11 +1,16 @@
 import { getMissingConfluenceConnectionFields, type RequiredConfluenceConnectionField } from "../confluence/authentication";
-import { fetchConfluencePageTree, type ConfluencePageTreeResult } from "../confluence/pageTree";
+import {
+  fetchConfluenceRootContentTree,
+  type ConfluenceRootContentTreeResult,
+  type ConfluenceRootContentType
+} from "../confluence/pageTree";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
 export type PullTreeFetcher = (
   settings: ConfluenceSyncSettings,
-  rootPageId: string
-) => Promise<ConfluencePageTreeResult>;
+  rootContentType: ConfluenceRootContentType,
+  rootContentId: string
+) => Promise<ConfluenceRootContentTreeResult>;
 
 export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
@@ -13,10 +18,10 @@ export interface RunPullTreeCommandInput {
   showNotice: (message: string) => void;
 }
 
-const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootPageId) => {
+const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType, rootContentId) => {
   const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
 
-  return fetchConfluencePageTree(settings, rootPageId, createObsidianRequestTransport);
+  return fetchConfluenceRootContentTree(settings, rootContentType, rootContentId, createObsidianRequestTransport);
 };
 
 export async function runPullTreeCommand({
@@ -42,13 +47,8 @@ export async function runPullTreeCommand({
     return;
   }
 
-  if (currentProject.rootContentType !== "page") {
-    showNotice("루트 폴더 Pull은 Epic 4 확장에서 구현됩니다.");
-    return;
-  }
-
   try {
-    const result = await fetchTree(settings, currentProject.rootPageId);
+    const result = await fetchTree(settings, currentProject.rootContentType, currentProject.rootContentId);
 
     if (!result.ok) {
       showNotice(result.message);
