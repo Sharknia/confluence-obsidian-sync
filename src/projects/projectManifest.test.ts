@@ -27,50 +27,56 @@ describe("createSafeProjectFolderName", () => {
     expect(createSafeProjectFolderName("Team: API / Sync? <Root>*")).toBe("Team API Sync Root");
   });
 
-  it("falls back to a page-id based folder name when the title is blank", () => {
-    expect(createSafeProjectFolderName("///", "123456789")).toBe("confluence-page-123456789");
+  it("returns the provided fallback folder name when the title is blank", () => {
+    expect(createSafeProjectFolderName("///", "confluence-page-123456789")).toBe("confluence-page-123456789");
   });
 
-  it("falls back to the page id when the title is a current or parent directory marker", () => {
-    expect(createSafeProjectFolderName(".", "123456789")).toBe("confluence-page-123456789");
-    expect(createSafeProjectFolderName("..", "123456789")).toBe("confluence-page-123456789");
+  it("returns the provided fallback folder name when the title is a current or parent directory marker", () => {
+    expect(createSafeProjectFolderName(".", "confluence-page-123456789")).toBe("confluence-page-123456789");
+    expect(createSafeProjectFolderName("..", "confluence-folder-987654321")).toBe("confluence-folder-987654321");
   });
 });
 
 describe("buildProjectPaths", () => {
-  it("builds manifest paths under the normalized vault folder and safe project folder", () => {
+  it("builds page root paths under a safe project title folder", () => {
     expect(buildProjectPaths("confluence", "Project Root", "123456789")).toEqual({
+      projectRootPath: "confluence/Project Root",
+      manifestFolderPath: "confluence/Project Root/.confluence-sync",
+      manifestPath: "confluence/Project Root/.confluence-sync/manifest.json"
+    });
+  });
+
+  it("builds folder root paths under a safe project title folder", () => {
+    expect(buildProjectPaths("confluence", "기획문서", "987654321", "folder")).toEqual({
+      projectRootPath: "confluence/기획문서",
+      manifestFolderPath: "confluence/기획문서/.confluence-sync",
+      manifestPath: "confluence/기획문서/.confluence-sync/manifest.json"
+    });
+  });
+
+  it("adds a numeric suffix to project title folder candidates", () => {
+    expect(buildProjectPaths("confluence", "기획문서", "987654321", "folder", 1)).toEqual({
+      projectRootPath: "confluence/기획문서 (1)",
+      manifestFolderPath: "confluence/기획문서 (1)/.confluence-sync",
+      manifestPath: "confluence/기획문서 (1)/.confluence-sync/manifest.json"
+    });
+  });
+
+  it("normalizes unsafe project titles before adding a suffix", () => {
+    expect(buildProjectPaths("confluence", "Team: API / Sync?", "123456789", "page", 2)).toEqual({
+      projectRootPath: "confluence/Team API Sync (2)",
+      manifestFolderPath: "confluence/Team API Sync (2)/.confluence-sync",
+      manifestPath: "confluence/Team API Sync (2)/.confluence-sync/manifest.json"
+    });
+  });
+
+  it("falls back to content-id based folder names when the title is unusable", () => {
+    expect(buildProjectPaths("confluence", "..", "123456789", "page")).toEqual({
       projectRootPath: "confluence/confluence-page-123456789",
       manifestFolderPath: "confluence/confluence-page-123456789/.confluence-sync",
       manifestPath: "confluence/confluence-page-123456789/.confluence-sync/manifest.json"
     });
-  });
-
-  it("keeps projects with the same title in different page ids separate", () => {
-    expect(buildProjectPaths("confluence", "Project Root", "123456789").projectRootPath).toBe(
-      "confluence/confluence-page-123456789"
-    );
-    expect(buildProjectPaths("confluence", "Project Root", "987654321").projectRootPath).toBe(
-      "confluence/confluence-page-987654321"
-    );
-  });
-
-  it("keeps the same project path when the title changes", () => {
-    expect(buildProjectPaths("confluence", "Old Root Title", "123456789")).toEqual(
-      buildProjectPaths("confluence", "New Root Title", "123456789")
-    );
-  });
-
-  it("falls back to a safe project folder name when the title is a directory marker", () => {
-    expect(buildProjectPaths("confluence", "..", "123456789")).toEqual({
-      projectRootPath: "confluence/confluence-page-123456789",
-      manifestFolderPath: "confluence/confluence-page-123456789/.confluence-sync",
-      manifestPath: "confluence/confluence-page-123456789/.confluence-sync/manifest.json"
-    });
-  });
-
-  it("builds folder root paths under a folder-id based stable folder", () => {
-    expect(buildProjectPaths("confluence", "Team Folder", "987654321", "folder")).toEqual({
+    expect(buildProjectPaths("confluence", "..", "987654321", "folder")).toEqual({
       projectRootPath: "confluence/confluence-folder-987654321",
       manifestFolderPath: "confluence/confluence-folder-987654321/.confluence-sync",
       manifestPath: "confluence/confluence-folder-987654321/.confluence-sync/manifest.json"
@@ -87,7 +93,7 @@ describe("buildProjectManifest", () => {
       rootContentType: "page" as const,
       rootContentId: "123456789",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
-      localFolderPath: "confluence/confluence-page-123456789",
+      localFolderPath: "confluence/Project Root",
       createdAt: "2026-04-23T12:34:56.000Z"
     };
 
@@ -100,8 +106,8 @@ describe("buildProjectManifest", () => {
       rootContentId: "123456789",
       rootPageId: "123456789",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
-      localRootFolder: "confluence/confluence-page-123456789",
-      localFolderPath: "confluence/confluence-page-123456789",
+      localRootFolder: "confluence/Project Root",
+      localFolderPath: "confluence/Project Root",
       lastPulledAt: null,
       createdAt: "2026-04-23T12:34:56.000Z",
       updatedAt: "2026-04-23T12:34:56.000Z"
@@ -119,7 +125,7 @@ describe("buildProjectManifest", () => {
         rootContentType: "folder",
         rootContentId: "987654321",
         rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/folders/987654321",
-        localFolderPath: "confluence/confluence-folder-987654321",
+        localFolderPath: "confluence/Team Folder",
         createdAt: "2026-04-23T12:34:56.000Z"
       })
     ).toEqual({
@@ -131,8 +137,8 @@ describe("buildProjectManifest", () => {
       rootContentId: "987654321",
       rootPageId: "",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/folders/987654321",
-      localRootFolder: "confluence/confluence-folder-987654321",
-      localFolderPath: "confluence/confluence-folder-987654321",
+      localRootFolder: "confluence/Team Folder",
+      localFolderPath: "confluence/Team Folder",
       lastPulledAt: null,
       createdAt: "2026-04-23T12:34:56.000Z",
       updatedAt: "2026-04-23T12:34:56.000Z"

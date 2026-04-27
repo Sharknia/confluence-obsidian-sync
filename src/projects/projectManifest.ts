@@ -56,7 +56,7 @@ export function normalizeVaultFolderPath(rawFolderPath: string): string {
   return folderSegments.join("/");
 }
 
-export function createSafeProjectFolderName(title: string, fallbackPageId = "unknown"): string {
+export function createSafeProjectFolderName(title: string, fallbackFolderName = "confluence-page-unknown"): string {
   const sanitizedTitle = title.replace(/[<>:"/\\|?*]+/gu, " ");
   const normalizedTitle = sanitizedTitle.replace(/\s+/gu, " ").trim();
 
@@ -64,20 +64,21 @@ export function createSafeProjectFolderName(title: string, fallbackPageId = "unk
     return normalizedTitle;
   }
 
-  return `confluence-page-${fallbackPageId}`;
+  return fallbackFolderName;
 }
 
 export function buildProjectPaths(
   defaultProjectFolder: string,
-  _projectName: string,
+  projectName: string,
   rootContentId: string,
-  rootContentType: RootContentType = "page"
+  rootContentType: RootContentType = "page",
+  collisionIndex = 0
 ): ProjectPaths {
   const normalizedDefaultFolder = normalizeVaultFolderPath(defaultProjectFolder);
-  const projectRootPath = joinVaultPath(
-    normalizedDefaultFolder,
-    createStableProjectFolderName(rootContentId, rootContentType)
-  );
+  const fallbackFolderName = createStableProjectFolderName(rootContentId, rootContentType);
+  const safeProjectFolderName = createSafeProjectFolderName(projectName, fallbackFolderName);
+  const projectFolderName = appendCollisionSuffix(safeProjectFolderName, collisionIndex);
+  const projectRootPath = joinVaultPath(normalizedDefaultFolder, projectFolderName);
   const manifestFolderPath = joinVaultPath(projectRootPath, ".confluence-sync");
   const manifestPath = joinVaultPath(manifestFolderPath, "manifest.json");
 
@@ -111,6 +112,14 @@ export function buildProjectManifest(input: BuildProjectManifestInput): Confluen
 
 function createStableProjectFolderName(rootContentId: string, rootContentType: RootContentType): string {
   return `confluence-${rootContentType}-${rootContentId}`;
+}
+
+function appendCollisionSuffix(folderName: string, collisionIndex: number): string {
+  if (collisionIndex <= 0) {
+    return folderName;
+  }
+
+  return `${folderName} (${collisionIndex})`;
 }
 
 function joinVaultPath(...segments: string[]): string {

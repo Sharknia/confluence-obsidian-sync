@@ -7,6 +7,8 @@ import type { ConfluenceRequestTransport } from "../confluence/requestTransport"
 import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 import { writeProjectManifest, type ProjectStorageAdapter } from "./projectStorage";
 
+const MAX_PROJECT_FOLDER_CANDIDATES = 100;
+
 export interface CreateProjectFromRootUrlInput {
   settings: ConfluenceSyncSettings;
   rawRootUrl: string;
@@ -35,6 +37,14 @@ interface RootContentMetadata {
   spaceId: string;
 }
 
+type CreatedProjectManifest = ReturnType<typeof buildProjectManifest>;
+
+interface CreatedProjectManifestWriteSuccess {
+  ok: true;
+  manifest: CreatedProjectManifest;
+  manifestPath: string;
+}
+
 export async function createProjectFromRootUrl(
   input: CreateProjectFromRootUrlInput
 ): Promise<CreateProjectFromRootUrlResult> {
@@ -56,35 +66,19 @@ export async function createProjectFromRootUrl(
   }
 
   const rootContentMetadata = metadataResult.metadata;
-  let paths;
-
-  try {
-    paths = buildProjectPaths(
-      input.settings.defaultProjectFolder,
-      rootContentMetadata.projectName,
-      rootContentMetadata.rootContentId,
-      rootContentMetadata.rootContentType
-    );
-  } catch (error: unknown) {
-    return buildFailureResult(getProjectPathErrorMessage(error));
-  }
-
   const createdAt = input.now().toISOString();
-  const manifest = buildProjectManifest({
-    projectName: rootContentMetadata.projectName,
-    confluenceBaseUrl: getConfluenceApiBaseUrl(input.settings.confluenceBaseUrl),
-    spaceId: rootContentMetadata.spaceId,
-    rootContentType: rootContentMetadata.rootContentType,
-    rootContentId: rootContentMetadata.rootContentId,
+  const writeResult = await writeManifestToFirstAvailableProjectPath({
+    input,
+    rootContentMetadata,
     rootUrl: parsedRootUrlResult.rootUrl,
-    localFolderPath: paths.projectRootPath,
     createdAt
   });
-  const writeResult = await writeProjectManifest(input.storage, paths, manifest);
 
   if (!writeResult.ok) {
     return buildFailureResult(writeResult.message);
   }
+
+  const manifest = writeResult.manifest;
 
   return {
     ok: true,
@@ -100,6 +94,71 @@ export async function createProjectFromRootUrl(
       manifestPath: writeResult.manifestPath
     }
   };
+}
+
+interface WriteManifestToFirstAvailableProjectPathInput {
+  input: CreateProjectFromRootUrlInput;
+  rootContentMetadata: RootContentMetadata;
+  rootUrl: string;
+  createdAt: string;
+}
+
+async function writeManifestToFirstAvailableProjectPath({
+  input,
+  rootContentMetadata,
+  rootUrl,
+  createdAt
+}: WriteManifestToFirstAvailableProjectPathInput): Promise<
+  CreatedProjectManifestWriteSuccess | CreateProjectFromRootUrlFailure
+> {
+  for (let collisionIndex = 0; collisionIndex < MAX_PROJECT_FOLDER_CANDIDATES; collisionIndex += 1) {
+    let paths;
+
+    try {
+      paths = buildProjectPaths(
+        input.settings.defaultProjectFolder,
+        rootContentMetadata.projectName,
+        rootContentMetadata.rootContentId,
+        rootContentMetadata.rootContentType,
+        collisionIndex
+      );
+    } catch (error: unknown) {
+      return buildFailureResult(getProjectPathErrorMessage(error));
+    }
+
+    const projectRootExists = await input.storage.exists(paths.projectRootPath);
+    const manifestExists = await input.storage.exists(paths.manifestPath);
+
+    if (projectRootExists && !manifestExists) {
+      continue;
+    }
+
+    const manifest = buildProjectManifest({
+      projectName: rootContentMetadata.projectName,
+      confluenceBaseUrl: getConfluenceApiBaseUrl(input.settings.confluenceBaseUrl),
+      spaceId: rootContentMetadata.spaceId,
+      rootContentType: rootContentMetadata.rootContentType,
+      rootContentId: rootContentMetadata.rootContentId,
+      rootUrl,
+      localFolderPath: paths.projectRootPath,
+      createdAt
+    });
+    const writeResult = await writeProjectManifest(input.storage, paths, manifest);
+
+    if (writeResult.ok) {
+      return {
+        ok: true,
+        manifest,
+        manifestPath: writeResult.manifestPath
+      };
+    }
+
+    if (writeResult.reason !== "manifest-already-exists") {
+      return buildFailureResult(writeResult.message);
+    }
+  }
+
+  return buildFailureResult("사용 가능한 로컬 프로젝트 폴더명을 찾을 수 없습니다.");
 }
 
 async function fetchRootContentMetadata(
