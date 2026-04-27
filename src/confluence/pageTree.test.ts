@@ -817,6 +817,143 @@ describe("fetchConfluencePageTree", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("handles pagination while expanding recursive folder descendants", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "folder-200", title: "Depth Ten Folder", type: "folder", parentId: "folder-100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-300", title: "First Deep Page", type: "page", parentId: "folder-200", depth: 1, childPosition: 0 }
+          ],
+          _links: { next: "/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10&cursor=next-token" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "page-400", title: "Second Deep Page", type: "page", parentId: "folder-200", depth: 1, childPosition: 1 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-300",
+          title: "First Deep Page",
+          version: { number: 3 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-300/First+Deep+Page" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-400",
+          title: "Second Deep Page",
+          version: { number: 4 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Second+Deep+Page" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10&cursor=next-token",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-400"
+    ]);
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-300", "page-400"]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("returns a critical failure when recursive folder descendants expansion fails", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "folder-200", title: "Depth Ten Folder", type: "folder", parentId: "folder-100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 500,
+        json: {}
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10"
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "api-error",
+      message: "Confluence API 오류가 발생했습니다. HTTP 500"
+    });
+  });
+
+  it("returns a critical failure when recursive page descendants expansion fails", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "100",
+          title: "Root",
+          version: { number: 1 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [
+            { id: "200", title: "Depth Ten", type: "page", parentId: "100", depth: 10, childPosition: 0 }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 500,
+        json: {}
+      }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/200/descendants?limit=100&depth=10"
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "api-error",
+      message: "Confluence API 오류가 발생했습니다. HTTP 500"
+    });
+  });
+
   it("records folder descendant page detail errors and continues pulling accessible pages", async () => {
     const { transport } = createSequencedTransport([
       {
