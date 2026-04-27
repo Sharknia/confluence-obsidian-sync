@@ -817,6 +817,60 @@ describe("fetchConfluencePageTree", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("excludes draft pages from folder pulls without recording page detail errors", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          results: [
+            {
+              id: "page-draft",
+              status: "draft",
+              title: "Draft Page",
+              type: "page",
+              parentId: "folder-100",
+              depth: 1,
+              childPosition: 0
+            },
+            {
+              id: "page-published",
+              title: "Published Page",
+              type: "page",
+              parentId: "folder-100",
+              depth: 1,
+              childPosition: 1
+            }
+          ],
+          _links: {}
+        }
+      },
+      {
+        status: 200,
+        json: {
+          id: "page-published",
+          title: "Published Page",
+          version: { number: 2 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/page-published/Published+Page" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluenceRootContentTree(createSettings(), "folder", "folder-100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-published"
+    ]);
+    expect(result.pages.map((page) => page.pageId)).toEqual(["page-published"]);
+    expect(toFolderChildIds(result.root.children)).toEqual(["page-published"]);
+    expect(result.errors).toEqual([]);
+  });
+
   it("handles pagination while expanding recursive folder descendants", async () => {
     const { requests, transport } = createSequencedTransport([
       {

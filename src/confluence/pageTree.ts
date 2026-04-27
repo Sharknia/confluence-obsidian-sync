@@ -352,6 +352,14 @@ function isDescendantResultWithType(value: unknown): value is { type: string } {
   return typeof (value as { type?: unknown }).type === "string";
 }
 
+function isDraftDescendantResult(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  return (value as { status?: unknown }).status === "draft";
+}
+
 function buildSourceUrl(settings: ConfluenceSyncSettings, pageId: string, links: PageDetailApiResponse["_links"]): string {
   const webuiPath = links?.webui;
 
@@ -429,6 +437,10 @@ function toDescendantPageSummaries(response: DescendantsApiResponse): Descendant
       continue;
     }
 
+    if (isDraftDescendantResult(result)) {
+      continue;
+    }
+
     if (!isDescendantPageSummary(result)) {
       return buildFailure("invalid-response", "Confluence 하위 페이지 목록 형식이 올바르지 않습니다.");
     }
@@ -451,6 +463,10 @@ function toDescendantContentSummaries(
 
     // Folder root에서는 구조 보존에 필요한 page/folder만 사용한다.
     if (result.type !== "page" && result.type !== "folder") {
+      continue;
+    }
+
+    if (isDraftDescendantResult(result)) {
       continue;
     }
 
