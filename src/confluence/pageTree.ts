@@ -573,53 +573,49 @@ async function fetchFolderDescendantContentSummaries(
   rootFolderId: string,
   transport: ConfluenceRequestTransport
 ): Promise<DescendantContentSummary[] | ConfluencePageTreeFailure> {
-  const summaries: DescendantContentSummary[] = [];
-  let nextRequestPath: string | null =
-    `/wiki/api/v2/folders/${encodeURIComponent(rootFolderId)}/descendants?limit=${DESCENDANTS_PAGE_LIMIT}&depth=${DESCENDANTS_MAX_DEPTH}`;
+  const summariesByContentId = new Map<string, DescendantContentSummary>();
+  const expandedRootKeys = new Set<string>();
+  const pendingRoots: DescendantsFetchRoot[] = [{ contentType: "folder", contentId: rootFolderId, depthOffset: 0 }];
 
-  while (nextRequestPath !== null) {
-    const descendantsResponse = await requestConfluence(
+  while (pendingRoots.length > 0) {
+    const root = pendingRoots.shift();
+
+    if (root === undefined) {
+      continue;
+    }
+
+    const rootKey = `${root.contentType}:${root.contentId}`;
+
+    if (expandedRootKeys.has(rootKey)) {
+      continue;
+    }
+
+    expandedRootKeys.add(rootKey);
+    const contentSummaries = await fetchDescendantSummariesForRoot(
+      settings,
+      root,
       transport,
-      createConfluenceGetRequest(settings, nextRequestPath)
+      toDescendantContentSummaries
     );
-
-    if (isPageTreeFailure(descendantsResponse)) {
-      return descendantsResponse;
-    }
-
-    if (descendantsResponse.status !== 200) {
-      return classifyHttpFailure(descendantsResponse.status);
-    }
-
-    if (!isDescendantsApiResponse(descendantsResponse.json)) {
-      return buildFailure("invalid-response", "Confluence descendants 응답 형식이 올바르지 않습니다.");
-    }
-
-    const contentSummaries = toDescendantContentSummaries(descendantsResponse.json);
 
     if (isPageTreeFailure(contentSummaries)) {
       return contentSummaries;
     }
 
-    summaries.push(...contentSummaries);
+    for (const summary of contentSummaries) {
+      if (summariesByContentId.has(summary.id)) {
+        continue;
+      }
 
-    const rawNextLink = readNextLink(descendantsResponse.json);
+      summariesByContentId.set(summary.id, summary);
 
-    if (rawNextLink === null) {
-      nextRequestPath = null;
-      continue;
+      if (summary.depth - root.depthOffset === DESCENDANTS_MAX_DEPTH) {
+        pendingRoots.push({ contentType: summary.type, contentId: summary.id, depthOffset: summary.depth });
+      }
     }
-
-    const nextApiPath = toApiPath(settings, rawNextLink);
-
-    if (isPageTreeFailure(nextApiPath)) {
-      return nextApiPath;
-    }
-
-    nextRequestPath = nextApiPath;
   }
 
-  return summaries;
+  return [...summariesByContentId.values()];
 }
 
 function toDescendantPage(
