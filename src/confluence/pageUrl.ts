@@ -151,7 +151,7 @@ function extractConfluenceRootContentDetails(url: URL): ConfluenceRootContentDet
       : { rootContentType: "page", rootContentId: pageId, kind: "modern-page" };
   }
 
-  const folderPathMatch = url.pathname.match(/^\/wiki\/spaces\/[^/]+\/folders\/(\d+)(?:\/[^/]+)?$/u);
+  const folderPathMatch = url.pathname.match(/^\/wiki\/spaces\/[^/]+\/folders?\/(\d+)(?:\/[^/]+)?$/u);
 
   if (folderPathMatch !== null) {
     const folderId = folderPathMatch[1];

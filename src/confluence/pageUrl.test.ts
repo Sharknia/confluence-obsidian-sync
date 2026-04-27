@@ -211,6 +211,20 @@ describe("parseConfluenceRootUrl", () => {
     });
   });
 
+  it("parses a singular folder URL as root content", () => {
+    const result = parseConfluenceRootUrl(
+      "https://selta.atlassian.net/wiki/spaces/IS/folder/23167000?atlOrigin=abc",
+      "https://selta.atlassian.net/wiki"
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      rootContentType: "folder",
+      rootContentId: "23167000",
+      rootUrl: "https://selta.atlassian.net/wiki/spaces/IS/folder/23167000"
+    });
+  });
+
   it("rejects unsupported same-origin URLs without root content ids", () => {
     const result = parseConfluenceRootUrl(
       "https://selta.atlassian.net/wiki/spaces/DEV",
