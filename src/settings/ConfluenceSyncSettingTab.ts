@@ -5,6 +5,7 @@ import { createProjectFromRootUrl } from "../projects/createProjectFromRootUrl";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type ConfluenceObsidianSyncPlugin from "../main";
 import { normalizeConfluenceBaseUrl } from "./defaultSettings";
+import { ATLASSIAN_API_TOKEN_URL, SYNC_PANEL_OPEN_GUIDE_TEXT } from "./settingsHelpContent";
 
 export class ConfluenceSyncSettingTab extends PluginSettingTab {
   constructor(private readonly plugin: ConfluenceObsidianSyncPlugin) {
@@ -19,6 +20,10 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "confluence-sync-setting-description",
       text: "Confluence Cloud 문서를 Obsidian vault 안의 로컬 Markdown 작업 사본으로 가져오기 위한 기본 설정입니다."
+    });
+    containerEl.createEl("p", {
+      cls: "confluence-sync-setting-description",
+      text: SYNC_PANEL_OPEN_GUIDE_TEXT
     });
 
     new Setting(containerEl)
@@ -60,6 +65,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+    appendApiTokenHelp(containerEl);
 
     let rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? "";
 
@@ -200,6 +206,21 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
 
     return `현재 프로젝트: ${currentProject.projectName} (${currentProject.localFolderPath})`;
   }
+}
+
+function appendApiTokenHelp(containerEl: HTMLElement): void {
+  const helpEl = containerEl.createEl("p", {
+    cls: "confluence-sync-setting-description"
+  });
+  helpEl.append("API token은 ");
+
+  const linkEl = helpEl.createEl("a", {
+    text: "Atlassian API token 페이지"
+  });
+  linkEl.href = ATLASSIAN_API_TOKEN_URL;
+  linkEl.rel = "noreferrer";
+
+  helpEl.append("에서 발급할 수 있습니다.");
 }
 
 function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): ProjectStorageAdapter {

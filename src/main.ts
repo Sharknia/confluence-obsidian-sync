@@ -14,6 +14,7 @@ import {
   type ConfluenceSyncSettings
 } from "./settings/defaultSettings";
 import { chooseSyncPanelLeaf } from "./views/syncPanelIntegration";
+import { registerSyncPanelRibbonIcon } from "./views/syncPanelRibbon";
 import { buildSyncPanelState } from "./views/syncPanelState";
 import { SYNC_PANEL_VIEW_TYPE, SyncPanelView } from "./views/syncPanelView";
 
@@ -40,6 +41,10 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
           }
         })
     );
+    registerSyncPanelRibbonIcon({
+      addRibbonIcon: (icon, title, callback) => this.addRibbonIcon(icon, title, callback),
+      openSyncPanel: () => this.openSyncPanel()
+    });
     this.registerCommands();
   }
 
