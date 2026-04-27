@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfluencePageUrl } from "./pageUrl";
+import { parseConfluencePageUrl, parseConfluenceRootUrl } from "./pageUrl";
 
 describe("parseConfluencePageUrl", () => {
   it("parses a space root page URL and strips the hash from the stored root URL", () => {
@@ -165,6 +165,62 @@ describe("parseConfluencePageUrl", () => {
       ok: false,
       reason: "missing-page-id",
       message: "Confluence 페이지 URL에서 pageId를 찾을 수 없습니다."
+    });
+  });
+
+  it("rejects folder URLs", () => {
+    const result = parseConfluencePageUrl(
+      "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder",
+      "https://selta.atlassian.net"
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "missing-page-id",
+      message: "Confluence 페이지 URL에서 pageId를 찾을 수 없습니다."
+    });
+  });
+});
+
+describe("parseConfluenceRootUrl", () => {
+  it("parses a page URL as root content", () => {
+    const result = parseConfluenceRootUrl(
+      "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root?atlOrigin=abc#section",
+      "https://selta.atlassian.net/wiki"
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      rootContentType: "page",
+      rootContentId: "123456789",
+      rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root"
+    });
+  });
+
+  it("parses a folder URL as root content", () => {
+    const result = parseConfluenceRootUrl(
+      "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder?atlOrigin=abc#children",
+      "https://selta.atlassian.net/wiki"
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      rootContentType: "folder",
+      rootContentId: "987654321",
+      rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder"
+    });
+  });
+
+  it("rejects unsupported same-origin URLs without root content ids", () => {
+    const result = parseConfluenceRootUrl(
+      "https://selta.atlassian.net/wiki/spaces/DEV",
+      "https://selta.atlassian.net"
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "missing-root-content-id",
+      message: "Confluence 루트 콘텐츠 URL에서 pageId 또는 folderId를 찾을 수 없습니다."
     });
   });
 });

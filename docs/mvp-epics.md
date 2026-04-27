@@ -68,6 +68,24 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 
 - [Root Page Project Creation Implementation Plan](superpowers/plans/2026-04-23-root-page-project-creation.md)
 
+## Epic 3 확장. 루트 폴더 기반 프로젝트 생성
+
+### 목표
+
+사용자가 Confluence 루트 폴더 URL을 입력해도 로컬 프로젝트 설정을 생성한다.
+
+### 완료 기준
+
+- Confluence folder URL에서 folderId를 추출한다.
+- 루트 폴더 메타데이터를 조회한다.
+- 프로젝트 manifest에 rootContentType과 rootContentId를 저장한다.
+- 기존 page 루트 프로젝트와 folder 루트 프로젝트를 같은 UI에서 생성할 수 있다.
+- folder 루트 프로젝트는 이후 Pull에서 folder descendants API를 사용할 수 있게 구분된다.
+
+### 구현 계획
+
+- [Root Folder Project Creation Implementation Plan](superpowers/plans/2026-04-24-root-folder-project-creation.md)
+
 ## Epic 4. 실제 Confluence 페이지 트리 Pull
 
 ### 목표
@@ -81,6 +99,21 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 - 각 페이지의 제목, ID, parent ID, version, source URL을 수집한다.
 - API pagination을 처리한다.
 - 일부 페이지 조회가 실패해도 전체 작업을 무조건 중단하지 않고 오류 목록을 남긴다.
+
+## Epic 4 확장. 루트 폴더 트리 Pull
+
+### 목표
+
+루트 폴더 프로젝트에서 하위 Confluence 페이지 트리를 내려받는다.
+
+### 완료 기준
+
+- rootContentType이 folder인 프로젝트를 인식한다.
+- 루트 폴더 기준 descendants를 조회한다.
+- folder descendants 결과에서 페이지 계층 구조를 보존한다.
+- 페이지의 제목, ID, parent ID, version, source URL을 수집한다.
+- folder descendants API pagination을 처리한다.
+- 일부 페이지 조회 실패 시 전체 작업을 중단하지 않고 오류 목록을 남긴다.
 
 ## Epic 5. Confluence 본문을 Markdown 파일로 저장
 

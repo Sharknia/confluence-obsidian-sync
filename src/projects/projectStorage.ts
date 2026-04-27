@@ -1,4 +1,4 @@
-import type { ConfluenceProjectManifest, ProjectPaths } from "./projectManifest";
+import type { ConfluenceProjectManifest, ProjectPaths, RootContentType } from "./projectManifest";
 
 export interface ProjectStorageAdapter {
   exists(path: string): Promise<boolean>;
@@ -99,7 +99,8 @@ async function updateExistingProjectManifest(
 
 interface ExistingProjectManifestIdentity {
   confluenceBaseUrl: string;
-  rootPageId: string;
+  rootContentType: RootContentType;
+  rootContentId: string;
   localRootFolder: string;
 }
 
@@ -107,14 +108,17 @@ function parseExistingProjectManifestIdentity(rawManifest: string): ExistingProj
   try {
     const parsedManifest = JSON.parse(rawManifest) as Partial<ConfluenceProjectManifest>;
 
+    const rootIdentity = readExistingRootIdentity(parsedManifest);
+
     if (
-      typeof parsedManifest.rootPageId === "string" &&
+      rootIdentity !== null &&
       typeof parsedManifest.localRootFolder === "string" &&
       typeof parsedManifest.confluenceBaseUrl === "string"
     ) {
       return {
         confluenceBaseUrl: parsedManifest.confluenceBaseUrl,
-        rootPageId: parsedManifest.rootPageId,
+        rootContentType: rootIdentity.rootContentType,
+        rootContentId: rootIdentity.rootContentId,
         localRootFolder: parsedManifest.localRootFolder
       };
     }
@@ -131,7 +135,32 @@ function isSameProjectManifest(
 ): boolean {
   return (
     existingManifest.confluenceBaseUrl === manifest.confluenceBaseUrl &&
-    existingManifest.rootPageId === manifest.rootPageId &&
+    existingManifest.rootContentType === manifest.rootContentType &&
+    existingManifest.rootContentId === manifest.rootContentId &&
     existingManifest.localRootFolder === manifest.localRootFolder
   );
+}
+
+function readExistingRootIdentity(
+  parsedManifest: Partial<ConfluenceProjectManifest>
+): Pick<ExistingProjectManifestIdentity, "rootContentType" | "rootContentId"> | null {
+  if (
+    (parsedManifest.rootContentType === "page" || parsedManifest.rootContentType === "folder") &&
+    typeof parsedManifest.rootContentId === "string"
+  ) {
+    return {
+      rootContentType: parsedManifest.rootContentType,
+      rootContentId: parsedManifest.rootContentId
+    };
+  }
+
+  // 이전 manifest는 page 프로젝트만 저장했으므로 rootPageId를 page rootContentId로 승격한다.
+  if (typeof parsedManifest.rootPageId === "string") {
+    return {
+      rootContentType: "page",
+      rootContentId: parsedManifest.rootPageId
+    };
+  }
+
+  return null;
 }

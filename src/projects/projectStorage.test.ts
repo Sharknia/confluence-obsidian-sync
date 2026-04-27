@@ -16,6 +16,8 @@ function createManifest(): ConfluenceProjectManifest {
     projectName: "Project Root",
     confluenceBaseUrl: "https://example.atlassian.net",
     spaceId: "SPACE",
+    rootContentType: "page",
+    rootContentId: "123456789",
     rootPageId: "123456789",
     rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
     localRootFolder: "confluence/confluence-page-123456789",
@@ -186,11 +188,74 @@ describe("writeProjectManifest", () => {
     ]);
   });
 
+  it("updates an existing folder manifest when it belongs to the same folder project", async () => {
+    const paths = {
+      projectRootPath: "confluence/confluence-folder-987654321",
+      manifestFolderPath: "confluence/confluence-folder-987654321/.confluence-sync",
+      manifestPath: "confluence/confluence-folder-987654321/.confluence-sync/manifest.json"
+    };
+    const manifest = {
+      ...createManifest(),
+      projectName: "Team Folder",
+      rootContentType: "folder" as const,
+      rootContentId: "987654321",
+      rootPageId: "",
+      rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/folders/987654321",
+      localRootFolder: "confluence/confluence-folder-987654321",
+      localFolderPath: "confluence/confluence-folder-987654321"
+    };
+    const updatedManifest = {
+      ...manifest,
+      projectName: "Renamed Team Folder"
+    };
+    const { calls, storage } = createStorageMock({
+      existingPaths: new Set([paths.manifestPath]),
+      existingFiles: new Map([[paths.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`]])
+    });
+
+    const result = await writeProjectManifest(storage, paths, updatedManifest);
+
+    expect(result).toEqual({
+      ok: true,
+      manifestPath: paths.manifestPath
+    });
+    expect(calls).toEqual([
+      `exists:${paths.manifestPath}`,
+      `read:${paths.manifestPath}`,
+      `write:${paths.manifestPath}:${JSON.stringify(updatedManifest, null, 2)}\n`
+    ]);
+  });
+
+  it("returns manifest-already-exists when root content id matches but root content type differs", async () => {
+    const paths = createProjectPaths();
+    const manifest = createManifest();
+    const existingManifest = {
+      ...manifest,
+      rootContentType: "folder",
+      rootContentId: manifest.rootContentId,
+      rootPageId: ""
+    };
+    const { calls, storage } = createStorageMock({
+      existingPaths: new Set([paths.manifestPath]),
+      existingFiles: new Map([[paths.manifestPath, `${JSON.stringify(existingManifest, null, 2)}\n`]])
+    });
+
+    const result = await writeProjectManifest(storage, paths, manifest);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "manifest-already-exists",
+      message: "이미 프로젝트 manifest가 존재합니다. 기존 프로젝트를 덮어쓰지 않습니다."
+    });
+    expect(calls).toEqual([`exists:${paths.manifestPath}`, `read:${paths.manifestPath}`]);
+  });
+
   it("returns manifest-already-exists without creating folders or writing when a different manifest already exists", async () => {
     const paths = createProjectPaths();
     const manifest = createManifest();
     const existingManifest = {
       ...manifest,
+      rootContentId: "987654321",
       rootPageId: "987654321",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/987654321/Other+Root"
     };
@@ -219,6 +284,7 @@ describe("writeProjectManifest", () => {
           `${JSON.stringify(
             {
               ...manifest,
+              rootContentId: "987654321",
               rootPageId: "987654321",
               rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/987654321/Other+Root"
             },

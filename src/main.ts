@@ -52,7 +52,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
         const currentProject = this.settings.currentProject;
 
         if (currentProject === null) {
-          new Notice("Pull Tree 실행 전에 설정 화면에서 루트 페이지 기반 프로젝트를 생성하세요.");
+          new Notice("Pull Tree 실행 전에 설정 화면에서 루트 콘텐츠 기반 프로젝트를 생성하세요.");
           return;
         }
 

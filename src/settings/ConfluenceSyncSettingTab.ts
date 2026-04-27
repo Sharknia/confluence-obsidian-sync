@@ -61,7 +61,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
           });
       });
 
-    let rootPageUrl = this.plugin.settings.currentProject?.rootUrl ?? "";
+    let rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? "";
 
     const currentProjectStatusEl = containerEl.createEl("p", {
       cls: "confluence-sync-current-project-status",
@@ -70,24 +70,24 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
 
     const projectCreationStatusEl = containerEl.createEl("p", {
       cls: "confluence-sync-project-creation-status",
-      text: "루트 페이지 기반 프로젝트를 생성할 수 있습니다."
+      text: "루트 페이지 또는 루트 폴더 기반 프로젝트를 생성할 수 있습니다."
     });
 
     new Setting(containerEl)
-      .setName("Root page URL")
-      .setDesc("루트 페이지 URL로 Confluence 프로젝트를 생성합니다.")
+      .setName("Root content URL")
+      .setDesc("루트 페이지 또는 루트 폴더 URL로 Confluence 프로젝트를 생성합니다.")
       .addText((text) => {
         text
           .setPlaceholder("https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root")
-          .setValue(rootPageUrl)
+          .setValue(rootContentUrl)
           .onChange((value) => {
-            rootPageUrl = value;
+            rootContentUrl = value;
           });
       });
 
     new Setting(containerEl)
       .setName("Create project")
-      .setDesc("루트 페이지 URL을 기반으로 로컬 프로젝트 manifest와 폴더를 생성합니다.")
+      .setDesc("루트 페이지 또는 폴더 URL을 기반으로 로컬 프로젝트 manifest와 폴더를 생성합니다.")
       .addButton((button) => {
         button.setButtonText("Create project").onClick(async () => {
           button.setDisabled(true);
@@ -96,7 +96,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
           try {
             const result = await createProjectFromRootUrl({
               settings: this.plugin.settings,
-              rawRootUrl: rootPageUrl,
+              rawRootUrl: rootContentUrl,
               transport: createObsidianRequestTransport,
               storage: createVaultStorageAdapter(this.plugin),
               now: () => new Date()

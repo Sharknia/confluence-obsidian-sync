@@ -68,6 +68,14 @@ describe("buildProjectPaths", () => {
       manifestPath: "confluence/confluence-page-123456789/.confluence-sync/manifest.json"
     });
   });
+
+  it("builds folder root paths under a folder-id based stable folder", () => {
+    expect(buildProjectPaths("confluence", "Team Folder", "987654321", "folder")).toEqual({
+      projectRootPath: "confluence/confluence-folder-987654321",
+      manifestFolderPath: "confluence/confluence-folder-987654321/.confluence-sync",
+      manifestPath: "confluence/confluence-folder-987654321/.confluence-sync/manifest.json"
+    });
+  });
 });
 
 describe("buildProjectManifest", () => {
@@ -76,7 +84,8 @@ describe("buildProjectManifest", () => {
       projectName: "Project Root",
       confluenceBaseUrl: "https://example.atlassian.net",
       spaceId: "SPACE",
-      rootPageId: "123456789",
+      rootContentType: "page" as const,
+      rootContentId: "123456789",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
       localFolderPath: "confluence/confluence-page-123456789",
       createdAt: "2026-04-23T12:34:56.000Z"
@@ -87,6 +96,8 @@ describe("buildProjectManifest", () => {
       projectName: "Project Root",
       confluenceBaseUrl: "https://example.atlassian.net",
       spaceId: "SPACE",
+      rootContentType: "page",
+      rootContentId: "123456789",
       rootPageId: "123456789",
       rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
       localRootFolder: "confluence/confluence-page-123456789",
@@ -97,5 +108,34 @@ describe("buildProjectManifest", () => {
     });
 
     expect(buildProjectManifest(input)).toEqual(buildProjectManifest(input));
+  });
+
+  it("stores folder root identity and leaves rootPageId blank", () => {
+    expect(
+      buildProjectManifest({
+        projectName: "Team Folder",
+        confluenceBaseUrl: "https://example.atlassian.net",
+        spaceId: "SPACE",
+        rootContentType: "folder",
+        rootContentId: "987654321",
+        rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/folders/987654321",
+        localFolderPath: "confluence/confluence-folder-987654321",
+        createdAt: "2026-04-23T12:34:56.000Z"
+      })
+    ).toEqual({
+      manifestVersion: 1,
+      projectName: "Team Folder",
+      confluenceBaseUrl: "https://example.atlassian.net",
+      spaceId: "SPACE",
+      rootContentType: "folder",
+      rootContentId: "987654321",
+      rootPageId: "",
+      rootUrl: "https://example.atlassian.net/wiki/spaces/DEV/folders/987654321",
+      localRootFolder: "confluence/confluence-folder-987654321",
+      localFolderPath: "confluence/confluence-folder-987654321",
+      lastPulledAt: null,
+      createdAt: "2026-04-23T12:34:56.000Z",
+      updatedAt: "2026-04-23T12:34:56.000Z"
+    });
   });
 });

@@ -113,6 +113,8 @@ describe("createProjectFromRootUrl", () => {
       currentProject: {
         projectName: "Project Root",
         spaceId: "SPACE",
+        rootContentType: "page",
+        rootContentId: "123456789",
         rootPageId: "123456789",
         rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
         localFolderPath: "confluence/confluence-page-123456789",
@@ -132,10 +134,70 @@ describe("createProjectFromRootUrl", () => {
       projectName: "Project Root",
       confluenceBaseUrl: "https://selta.atlassian.net",
       spaceId: "SPACE",
+      rootContentType: "page",
+      rootContentId: "123456789",
       rootPageId: "123456789",
       rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root",
       localRootFolder: "confluence/confluence-page-123456789",
       localFolderPath: "confluence/confluence-page-123456789",
+      lastPulledAt: null
+    });
+  });
+
+  it("creates a project from a root folder URL and stores folder metadata in the manifest", async () => {
+    const settings = createSettings();
+    const transport = createTransportMock({
+      status: 200,
+      json: {
+        id: "987654321",
+        title: "Team Folder",
+        spaceId: "SPACE"
+      }
+    });
+    const storage = createStorageMock();
+
+    const result = await createProjectFromRootUrl({
+      settings,
+      rawRootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder#children",
+      transport: transport.transport,
+      storage: storage.storage,
+      now: () => new Date("2026-04-23T12:34:56.000Z")
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      message: "Confluence 프로젝트를 생성했습니다: Team Folder",
+      currentProject: {
+        projectName: "Team Folder",
+        spaceId: "SPACE",
+        rootContentType: "folder",
+        rootContentId: "987654321",
+        rootPageId: "",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder",
+        localFolderPath: "confluence/confluence-folder-987654321",
+        manifestPath: "confluence/confluence-folder-987654321/.confluence-sync/manifest.json"
+      }
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(transport.calls[0]?.url).toBe("https://selta.atlassian.net/wiki/api/v2/folders/987654321");
+    expect(storage.writeCalls).toHaveLength(1);
+    expect(storage.writeCalls[0]?.path).toBe(
+      "confluence/confluence-folder-987654321/.confluence-sync/manifest.json"
+    );
+
+    const writtenManifest = JSON.parse(storage.writeCalls[0]?.data ?? "{}") as Record<string, unknown>;
+
+    expect(writtenManifest).toMatchObject({
+      manifestVersion: 1,
+      projectName: "Team Folder",
+      confluenceBaseUrl: "https://selta.atlassian.net",
+      spaceId: "SPACE",
+      rootContentType: "folder",
+      rootContentId: "987654321",
+      rootPageId: "",
+      rootUrl: "https://selta.atlassian.net/wiki/spaces/DEV/folders/987654321/Team+Folder",
+      localRootFolder: "confluence/confluence-folder-987654321",
+      localFolderPath: "confluence/confluence-folder-987654321",
       lastPulledAt: null
     });
   });
@@ -158,7 +220,7 @@ describe("createProjectFromRootUrl", () => {
 
     expect(result).toEqual({
       ok: false,
-      message: "Confluence 루트 페이지 URL을 해석할 수 없습니다."
+      message: "Confluence 루트 콘텐츠 URL을 해석할 수 없습니다."
     });
     expect(transport.calls).toHaveLength(0);
     expect(storage.calls).toHaveLength(0);

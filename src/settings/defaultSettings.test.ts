@@ -36,7 +36,7 @@ describe("loadConfluenceSyncSettings", () => {
     expect(settings).toEqual(DEFAULT_CONFLUENCE_SYNC_SETTINGS);
   });
 
-  it("loads stored current project exactly", async () => {
+  it("migrates a stored page current project without root content fields", async () => {
     const storedSettings = {
       currentProject: {
         projectName: "Current Project",
@@ -50,6 +50,85 @@ describe("loadConfluenceSyncSettings", () => {
 
     const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
 
+    expect(settings.currentProject).toEqual({
+      ...storedSettings.currentProject,
+      rootContentType: "page",
+      rootContentId: "12345"
+    });
+  });
+
+  it("loads a stored folder current project exactly", async () => {
+    const storedSettings = {
+      currentProject: {
+        projectName: "Current Folder",
+        spaceId: "SPACE-1",
+        rootContentType: "folder" as const,
+        rootContentId: "987654321",
+        rootPageId: "",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE-1/folders/987654321",
+        localFolderPath: "/Users/crobat/vault/confluence/current-folder",
+        manifestPath: "/Users/crobat/vault/confluence/current-folder/.confluence-sync/manifest.json"
+      }
+    };
+
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
+
     expect(settings.currentProject).toEqual(storedSettings.currentProject);
+  });
+
+  it("normalizes a stored folder current project with an empty root content ID to null", async () => {
+    const storedSettings = {
+      currentProject: {
+        projectName: "Current Folder",
+        spaceId: "SPACE-1",
+        rootContentType: "folder" as const,
+        rootContentId: "",
+        rootPageId: "12345",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE-1/folders/987654321",
+        localFolderPath: "/Users/crobat/vault/confluence/current-folder",
+        manifestPath: "/Users/crobat/vault/confluence/current-folder/.confluence-sync/manifest.json"
+      }
+    };
+
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
+
+    expect(settings.currentProject).toBeNull();
+  });
+
+  it("normalizes a stored folder current project without a root content ID to null", async () => {
+    const storedSettings = {
+      currentProject: {
+        projectName: "Current Folder",
+        spaceId: "SPACE-1",
+        rootContentType: "folder" as const,
+        rootPageId: "12345",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE-1/folders/987654321",
+        localFolderPath: "/Users/crobat/vault/confluence/current-folder",
+        manifestPath: "/Users/crobat/vault/confluence/current-folder/.confluence-sync/manifest.json"
+      }
+    };
+
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
+
+    expect(settings.currentProject).toBeNull();
+  });
+
+  it("normalizes a stored folder current project with a blank root content ID to null", async () => {
+    const storedSettings = {
+      currentProject: {
+        projectName: "Current Folder",
+        spaceId: "SPACE-1",
+        rootContentType: "folder" as const,
+        rootContentId: "   ",
+        rootPageId: "12345",
+        rootUrl: "https://selta.atlassian.net/wiki/spaces/SPACE-1/folders/987654321",
+        localFolderPath: "/Users/crobat/vault/confluence/current-folder",
+        manifestPath: "/Users/crobat/vault/confluence/current-folder/.confluence-sync/manifest.json"
+      }
+    };
+
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve(storedSettings));
+
+    expect(settings.currentProject).toBeNull();
   });
 });

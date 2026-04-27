@@ -1,8 +1,12 @@
+export type RootContentType = "page" | "folder";
+
 export interface ConfluenceProjectManifest {
   manifestVersion: 1;
   projectName: string;
   confluenceBaseUrl: string;
   spaceId: string;
+  rootContentType: RootContentType;
+  rootContentId: string;
   rootPageId: string;
   rootUrl: string;
   localRootFolder: string;
@@ -22,7 +26,8 @@ export interface BuildProjectManifestInput {
   projectName: string;
   confluenceBaseUrl: string;
   spaceId: string;
-  rootPageId: string;
+  rootContentType: RootContentType;
+  rootContentId: string;
   rootUrl: string;
   localFolderPath: string;
   createdAt: string;
@@ -62,9 +67,17 @@ export function createSafeProjectFolderName(title: string, fallbackPageId = "unk
   return `confluence-page-${fallbackPageId}`;
 }
 
-export function buildProjectPaths(defaultProjectFolder: string, _projectName: string, rootPageId: string): ProjectPaths {
+export function buildProjectPaths(
+  defaultProjectFolder: string,
+  _projectName: string,
+  rootContentId: string,
+  rootContentType: RootContentType = "page"
+): ProjectPaths {
   const normalizedDefaultFolder = normalizeVaultFolderPath(defaultProjectFolder);
-  const projectRootPath = joinVaultPath(normalizedDefaultFolder, createStableProjectFolderName(rootPageId));
+  const projectRootPath = joinVaultPath(
+    normalizedDefaultFolder,
+    createStableProjectFolderName(rootContentId, rootContentType)
+  );
   const manifestFolderPath = joinVaultPath(projectRootPath, ".confluence-sync");
   const manifestPath = joinVaultPath(manifestFolderPath, "manifest.json");
 
@@ -76,13 +89,17 @@ export function buildProjectPaths(defaultProjectFolder: string, _projectName: st
 }
 
 export function buildProjectManifest(input: BuildProjectManifestInput): ConfluenceProjectManifest {
+  const rootPageId = input.rootContentType === "page" ? input.rootContentId : "";
+
   // createdAt와 updatedAt을 동일하게 두어 생성 시점이 결정적으로 유지되도록 한다.
   return {
     manifestVersion: 1,
     projectName: input.projectName,
     confluenceBaseUrl: input.confluenceBaseUrl,
     spaceId: input.spaceId,
-    rootPageId: input.rootPageId,
+    rootContentType: input.rootContentType,
+    rootContentId: input.rootContentId,
+    rootPageId,
     rootUrl: input.rootUrl,
     localRootFolder: input.localFolderPath,
     localFolderPath: input.localFolderPath,
@@ -92,8 +109,8 @@ export function buildProjectManifest(input: BuildProjectManifestInput): Confluen
   };
 }
 
-function createStableProjectFolderName(rootPageId: string): string {
-  return `confluence-page-${rootPageId}`;
+function createStableProjectFolderName(rootContentId: string, rootContentType: RootContentType): string {
+  return `confluence-${rootContentType}-${rootContentId}`;
 }
 
 function joinVaultPath(...segments: string[]): string {
