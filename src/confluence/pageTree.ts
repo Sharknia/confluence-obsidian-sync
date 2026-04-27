@@ -24,6 +24,7 @@ export interface ConfluencePageTreePage {
   title: string;
   parentId: string | null;
   versionNumber: number;
+  bodyStorageValue: string;
   sourceUrl: string;
   depth: number;
   childPosition: number;
@@ -92,6 +93,11 @@ interface PageDetailApiResponse {
   version?: {
     number?: unknown;
   } | null;
+  body?: {
+    storage?: {
+      value?: unknown;
+    } | null;
+  } | null;
   _links?: {
     webui?: unknown;
   } | null;
@@ -159,7 +165,10 @@ function createAuthorizationHeader(settings: ConfluenceSyncSettings): string {
 
 function createPageDetailRequest(settings: ConfluenceSyncSettings, pageId: string) {
   return {
-    url: buildConfluenceApiUrl(settings.confluenceBaseUrl, `/wiki/api/v2/pages/${encodeURIComponent(pageId)}`),
+    url: buildConfluenceApiUrl(
+      settings.confluenceBaseUrl,
+      `/wiki/api/v2/pages/${encodeURIComponent(pageId)}?body-format=storage`
+    ),
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -297,6 +306,10 @@ function isPageDetailApiResponse(value: unknown): value is PageDetailApiResponse
     return false;
   }
 
+  if (typeof response.body?.storage?.value !== "string") {
+    return false;
+  }
+
   return typeof response._links === "object" || response._links === undefined || response._links === null;
 }
 
@@ -364,12 +377,22 @@ function buildSourceUrl(settings: ConfluenceSyncSettings, pageId: string, links:
   const webuiPath = links?.webui;
 
   if (typeof webuiPath === "string" && webuiPath.length > 0) {
-    return new URL(webuiPath, getConfluenceApiBaseUrl(settings.confluenceBaseUrl)).toString();
+    return new URL(normalizeConfluenceWebuiPath(webuiPath), getConfluenceApiBaseUrl(settings.confluenceBaseUrl)).toString();
   }
 
   const apiBaseUrl = getConfluenceApiBaseUrl(settings.confluenceBaseUrl);
 
   return new URL(`/wiki/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}`, apiBaseUrl).toString();
+}
+
+function normalizeConfluenceWebuiPath(webuiPath: string): string {
+  const pathWithLeadingSlash = webuiPath.startsWith("/") ? webuiPath : `/${webuiPath}`;
+
+  if (pathWithLeadingSlash === "/wiki" || pathWithLeadingSlash.startsWith("/wiki/")) {
+    return pathWithLeadingSlash;
+  }
+
+  return `/wiki${pathWithLeadingSlash}`;
 }
 
 function toRootPage(settings: ConfluenceSyncSettings, response: PageDetailApiResponse): ConfluencePageTreePage {
@@ -378,6 +401,7 @@ function toRootPage(settings: ConfluenceSyncSettings, response: PageDetailApiRes
     title: response.title as string,
     parentId: null,
     versionNumber: response.version?.number as number,
+    bodyStorageValue: response.body?.storage?.value as string,
     sourceUrl: buildSourceUrl(settings, response.id as string, response._links),
     depth: 0,
     childPosition: 0
@@ -644,6 +668,7 @@ function toDescendantPage(
     title: detail.title as string,
     parentId: summary.parentId,
     versionNumber: detail.version?.number as number,
+    bodyStorageValue: detail.body?.storage?.value as string,
     sourceUrl: buildSourceUrl(settings, detail.id as string, detail._links),
     depth: summary.depth,
     childPosition: summary.childPosition

@@ -138,6 +138,10 @@ Obsidian에서 로드 가능한 최소 플러그인 프로젝트를 만든다.
 - 동일 제목 충돌을 처리한다.
 - 변환 손실 가능성이 있는 macro는 명확히 표시한다.
 
+### 구현 계획
+
+- [Confluence Page Markdown Save Implementation Plan](superpowers/plans/2026-04-27-confluence-page-markdown-save.md)
+
 ## Epic 6. Pull 동기화 정책과 안전 삭제
 
 ### 목표

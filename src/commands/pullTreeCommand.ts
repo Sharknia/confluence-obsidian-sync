@@ -4,6 +4,8 @@ import {
   type ConfluenceRootContentTreeResult,
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
+import { buildPageMarkdownFiles } from "../projects/pageMarkdown";
+import { writeMarkdownPages, type ProjectStorageAdapter } from "../projects/projectStorage";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
 export type PullTreeFetcher = (
@@ -14,6 +16,7 @@ export type PullTreeFetcher = (
 
 export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
+  storage: ProjectStorageAdapter;
   fetchTree?: PullTreeFetcher;
   showNotice: (message: string) => void;
 }
@@ -26,6 +29,7 @@ const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType
 
 export async function runPullTreeCommand({
   settings,
+  storage,
   fetchTree = defaultPullTreeFetcher,
   showNotice
 }: RunPullTreeCommandInput): Promise<void> {
@@ -55,14 +59,55 @@ export async function runPullTreeCommand({
       return;
     }
 
-    const errorMessage = result.errors.length > 0 ? `, 실패 ${result.errors.length}개` : "";
-    showNotice(`Confluence 페이지 트리를 가져왔습니다: ${result.pages.length}개${errorMessage}`);
+    let markdownFiles: Awaited<ReturnType<typeof buildPageMarkdownFiles>>;
+    let writeResult: Awaited<ReturnType<typeof writeMarkdownPages>>;
+
+    try {
+      markdownFiles = await buildPageMarkdownFiles({
+        projectRootPath: currentProject.localFolderPath,
+        root: result.root,
+        pages: result.pages,
+        pathExists: (path) => storage.exists(path),
+        readExistingFile: (path) => storage.read(path)
+      });
+      writeResult = await writeMarkdownPages(storage, markdownFiles);
+    } catch {
+      showNotice("Markdown 파일을 저장할 수 없습니다.");
+      return;
+    }
+
+    if (!writeResult.ok) {
+      showNotice("Markdown 파일을 저장할 수 없습니다.");
+      return;
+    }
+
+    const conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
+    showNotice(
+      `Confluence 페이지를 Markdown으로 저장했습니다: ${writeResult.writtenFileCount}개${buildSuccessNoticeSuffix(
+        result.errors.length,
+        conversionWarningCount
+      )}`
+    );
   } catch (error) {
     console.error("Pull Tree 실행 중 예기치 못한 오류가 발생했습니다.", error);
 
     const message = error instanceof Error ? error.message : "Confluence 페이지 트리 조회 중 알 수 없는 오류가 발생했습니다.";
     showNotice(message);
   }
+}
+
+function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCount: number): string {
+  const suffixes: string[] = [];
+
+  if (fetchFailureCount > 0) {
+    suffixes.push(`조회 실패 ${fetchFailureCount}개`);
+  }
+
+  if (conversionWarningCount > 0) {
+    suffixes.push(`변환 경고 ${conversionWarningCount}개`);
+  }
+
+  return suffixes.length > 0 ? `, ${suffixes.join(", ")}` : "";
 }
 
 function toSettingsFieldName(field: RequiredConfluenceConnectionField): string {

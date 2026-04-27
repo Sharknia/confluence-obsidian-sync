@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConfluenceProjectManifest, ProjectPaths } from "./projectManifest";
-import { writeProjectManifest, type ProjectStorageAdapter } from "./projectStorage";
+import type { PageMarkdownFile } from "./pageMarkdown";
+import { writeMarkdownPages, writeProjectManifest, type ProjectStorageAdapter } from "./projectStorage";
 
 function createProjectPaths(): ProjectPaths {
   return {
@@ -350,5 +351,64 @@ describe("writeProjectManifest", () => {
       reason: "storage-error",
       message: "로컬 프로젝트 폴더 또는 manifest를 생성할 수 없습니다."
     });
+  });
+});
+
+describe("writeMarkdownPages", () => {
+  function createMarkdownFile(vaultPath: string, content: string): PageMarkdownFile {
+    return {
+      pageId: vaultPath,
+      title: vaultPath,
+      vaultPath,
+      content,
+      warnings: []
+    };
+  }
+
+  it("creates parent folders in order before writing markdown files", async () => {
+    const files = [
+      createMarkdownFile("confluence/Root/Root.md", "# Root\n"),
+      createMarkdownFile("confluence/Root/Child/Child.md", "# Child\n")
+    ];
+    const { calls, storage } = createStorageMock();
+
+    const result = await writeMarkdownPages(storage, files);
+
+    expect(result).toEqual({
+      ok: true,
+      writtenFileCount: files.length
+    });
+    expect(calls).toEqual([
+      "exists:confluence",
+      "mkdir:confluence",
+      "exists:confluence/Root",
+      "mkdir:confluence/Root",
+      "write:confluence/Root/Root.md:# Root\n",
+      "exists:confluence/Root/Child",
+      "mkdir:confluence/Root/Child",
+      "write:confluence/Root/Child/Child.md:# Child\n"
+    ]);
+  });
+
+  it("returns storage-error when a markdown write fails", async () => {
+    const files = [createMarkdownFile("confluence/Root/Root.md", "# Root\n")];
+    const { calls, storage } = createStorageMock({
+      failOnWritePath: files[0].vaultPath
+    });
+
+    const result = await writeMarkdownPages(storage, files);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "storage-error",
+      message: "Markdown 파일을 저장할 수 없습니다."
+    });
+    expect(calls).toEqual([
+      "exists:confluence",
+      "mkdir:confluence",
+      "exists:confluence/Root",
+      "mkdir:confluence/Root",
+      "write:confluence/Root/Root.md:# Root\n"
+    ]);
   });
 });

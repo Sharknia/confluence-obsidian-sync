@@ -69,7 +69,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
     });
     containerEl.createEl("p", {
       cls: "confluence-sync-pull-tree-description",
-      text: "Pull Tree는 현재 루트 페이지 기준 Confluence 페이지 트리를 조회하고, Markdown 저장은 다음 Epic에서 연결됩니다."
+      text: "Pull Tree는 현재 루트 콘텐츠 기준 Confluence 페이지 트리를 조회하고 Markdown 파일로 저장합니다."
     });
 
     const projectCreationStatusEl = containerEl.createEl("p", {

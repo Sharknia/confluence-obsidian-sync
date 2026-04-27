@@ -60,6 +60,7 @@ describe("fetchConfluencePageTree", () => {
           title: "Root",
           spaceId: "SPACE",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -81,6 +82,7 @@ describe("fetchConfluencePageTree", () => {
         title: "Root",
         parentId: null,
         versionNumber: 3,
+        bodyStorageValue: "<p>storage</p>",
         sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
         depth: 0,
         childPosition: 0,
@@ -92,6 +94,7 @@ describe("fetchConfluencePageTree", () => {
           title: "Root",
           parentId: null,
           versionNumber: 3,
+          bodyStorageValue: "<p>storage</p>",
           sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
           depth: 0,
           childPosition: 0
@@ -100,7 +103,7 @@ describe("fetchConfluencePageTree", () => {
       errors: []
     });
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100?body-format=storage",
       "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10"
     ]);
   });
@@ -113,6 +116,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -142,6 +146,7 @@ describe("fetchConfluencePageTree", () => {
           id: "200",
           title: "Child A",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/200/Child+A" }
         }
       },
@@ -151,6 +156,7 @@ describe("fetchConfluencePageTree", () => {
           id: "300",
           title: "Child B",
           version: { number: 5 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/300/Child+B" }
         }
       },
@@ -160,6 +166,7 @@ describe("fetchConfluencePageTree", () => {
           id: "400",
           title: "Grandchild",
           version: { number: 8 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/400/Grandchild" }
         }
       }
@@ -173,14 +180,20 @@ describe("fetchConfluencePageTree", () => {
     }
 
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100?body-format=storage",
       "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10&cursor=next-token",
-      "https://selta.atlassian.net/wiki/api/v2/pages/200",
-      "https://selta.atlassian.net/wiki/api/v2/pages/300",
-      "https://selta.atlassian.net/wiki/api/v2/pages/400"
+      "https://selta.atlassian.net/wiki/api/v2/pages/200?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/300?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/400?body-format=storage"
     ]);
     expect(result.pages.map((page) => page.pageId)).toEqual(["100", "200", "300", "400"]);
+    expect(result.pages.map((page) => page.bodyStorageValue)).toEqual([
+      "<p>storage</p>",
+      "<p>storage</p>",
+      "<p>storage</p>",
+      "<p>storage</p>"
+    ]);
     expect(result.root.children.map((page) => page.pageId)).toEqual(["200", "300"]);
     expect(result.root.children[0].children.map((page) => page.pageId)).toEqual(["400"]);
     expect(result.errors).toEqual([]);
@@ -194,6 +207,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -221,6 +235,7 @@ describe("fetchConfluencePageTree", () => {
           id: "200",
           title: "Depth Ten",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/200/Depth+Ten" }
         }
       },
@@ -230,6 +245,7 @@ describe("fetchConfluencePageTree", () => {
           id: "300",
           title: "Depth Eleven",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/300/Depth+Eleven" }
         }
       }
@@ -243,11 +259,11 @@ describe("fetchConfluencePageTree", () => {
     }
 
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100?body-format=storage",
       "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/pages/200/descendants?limit=100&depth=10",
-      "https://selta.atlassian.net/wiki/api/v2/pages/200",
-      "https://selta.atlassian.net/wiki/api/v2/pages/300"
+      "https://selta.atlassian.net/wiki/api/v2/pages/200?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/300?body-format=storage"
     ]);
     expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
       { pageId: "100", parentId: null, depth: 0 },
@@ -267,6 +283,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -287,6 +304,7 @@ describe("fetchConfluencePageTree", () => {
           id: "200",
           title: "Accessible",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/200/Accessible" }
         }
       },
@@ -300,6 +318,7 @@ describe("fetchConfluencePageTree", () => {
           id: "400",
           title: "Still Accessible",
           version: { number: 4 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/400/Still+Accessible" }
         }
       }
@@ -333,6 +352,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -353,6 +373,7 @@ describe("fetchConfluencePageTree", () => {
           id: "300",
           title: "Accessible",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/300/Accessible" }
         }
       }
@@ -403,6 +424,31 @@ describe("fetchConfluencePageTree", () => {
     });
   });
 
+  it("returns invalid-response when the root page detail has no storage body", async () => {
+    const { requests, transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "100",
+          title: "Root",
+          version: { number: 1 },
+          _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
+        }
+      }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://selta.atlassian.net/wiki/api/v2/pages/100?body-format=storage"
+    ]);
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid-response",
+      message: "Confluence 루트 페이지 응답 형식이 올바르지 않습니다."
+    });
+  });
+
   it("returns a critical failure when descendants pagination fails", async () => {
     const { transport } = createSequencedTransport([
       {
@@ -411,6 +457,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -437,6 +484,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -465,6 +513,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { base: "https://selta.atlassian.net/wiki" }
         }
       },
@@ -483,6 +532,7 @@ describe("fetchConfluencePageTree", () => {
           id: "200",
           title: "Child",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { base: "https://selta.atlassian.net/wiki" }
         }
       }
@@ -501,6 +551,39 @@ describe("fetchConfluencePageTree", () => {
     ]);
   });
 
+  it("builds source URLs under /wiki when Confluence webui links omit the wiki prefix", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "23756810",
+          title: "Product_Config",
+          version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
+          _links: { webui: "/spaces/IS/pages/23756810/Product_Config" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [],
+          _links: {}
+        }
+      }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "23756810", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    expect(result.pages[0]?.sourceUrl).toBe(
+      "https://selta.atlassian.net/wiki/spaces/IS/pages/23756810/Product_Config"
+    );
+  });
+
   it("records an error when a page cannot be attached because its parent is not a pulled page", async () => {
     const { transport } = createSequencedTransport([
       {
@@ -509,6 +592,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -528,6 +612,7 @@ describe("fetchConfluencePageTree", () => {
           id: "200",
           title: "Child Under Folder",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/200/Child+Under+Folder" }
         }
       }
@@ -587,6 +672,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "Overview",
           version: { number: 7 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Overview" }
         }
       },
@@ -596,6 +682,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-400",
           title: "Root Child",
           version: { number: 9 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Root+Child" }
         }
       }
@@ -627,10 +714,11 @@ describe("fetchConfluencePageTree", () => {
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10&cursor=next-token",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-300",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-400"
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-400?body-format=storage"
     ]);
     expect(result.pages.map((page) => page.pageId)).toEqual(["page-300", "page-400"]);
+    expect(result.pages.map((page) => page.bodyStorageValue)).toEqual(["<p>storage</p>", "<p>storage</p>"]);
     expect(result.root).toMatchObject({
       nodeType: "folder",
       contentId: "folder-100",
@@ -673,6 +761,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "Depth Eleven Page",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Depth+Eleven+Page" }
         }
       }
@@ -688,7 +777,7 @@ describe("fetchConfluencePageTree", () => {
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-300"
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300?body-format=storage"
     ]);
     expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
       { pageId: "page-300", parentId: "folder-200", depth: 11 }
@@ -724,6 +813,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-200",
           title: "Depth Ten Page",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-200/Depth+Ten+Page" }
         }
       },
@@ -733,6 +823,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "Depth Eleven Child",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Depth+Eleven+Child" }
         }
       }
@@ -748,8 +839,8 @@ describe("fetchConfluencePageTree", () => {
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/pages/page-200/descendants?limit=100&depth=10",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-200",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-300"
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-200?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300?body-format=storage"
     ]);
     expect(result.pages.map((page) => ({ pageId: page.pageId, parentId: page.parentId, depth: page.depth }))).toEqual([
       { pageId: "page-200", parentId: "folder-100", depth: 10 },
@@ -789,6 +880,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-400",
           title: "Root Sibling",
           version: { number: 4 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Root+Sibling" }
         }
       },
@@ -798,6 +890,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "Nested Child",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Nested+Child" }
         }
       }
@@ -850,6 +943,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-published",
           title: "Published Page",
           version: { number: 2 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-published/Published+Page" }
         }
       }
@@ -864,7 +958,7 @@ describe("fetchConfluencePageTree", () => {
 
     expect(requests.map((request) => request.url)).toEqual([
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-published"
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-published?body-format=storage"
     ]);
     expect(result.pages.map((page) => page.pageId)).toEqual(["page-published"]);
     expect(toFolderChildIds(result.root.children)).toEqual(["page-published"]);
@@ -906,6 +1000,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "First Deep Page",
           version: { number: 3 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/First+Deep+Page" }
         }
       },
@@ -915,6 +1010,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-400",
           title: "Second Deep Page",
           version: { number: 4 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Second+Deep+Page" }
         }
       }
@@ -931,8 +1027,8 @@ describe("fetchConfluencePageTree", () => {
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/folders/folder-200/descendants?limit=100&depth=10&cursor=next-token",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-300",
-      "https://selta.atlassian.net/wiki/api/v2/pages/page-400"
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-300?body-format=storage",
+      "https://selta.atlassian.net/wiki/api/v2/pages/page-400?body-format=storage"
     ]);
     expect(result.pages.map((page) => page.pageId)).toEqual(["page-300", "page-400"]);
     expect(result.errors).toEqual([]);
@@ -976,6 +1072,7 @@ describe("fetchConfluencePageTree", () => {
           id: "100",
           title: "Root",
           version: { number: 1 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
         }
       },
@@ -997,7 +1094,7 @@ describe("fetchConfluencePageTree", () => {
     const result = await fetchConfluencePageTree(createSettings(), "100", transport);
 
     expect(requests.map((request) => request.url)).toEqual([
-      "https://selta.atlassian.net/wiki/api/v2/pages/100",
+      "https://selta.atlassian.net/wiki/api/v2/pages/100?body-format=storage",
       "https://selta.atlassian.net/wiki/api/v2/pages/100/descendants?limit=100&depth=10",
       "https://selta.atlassian.net/wiki/api/v2/pages/200/descendants?limit=100&depth=10"
     ]);
@@ -1038,6 +1135,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-300",
           title: "Accessible",
           version: { number: 4 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-300/Accessible" }
         }
       }
@@ -1089,6 +1187,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-400",
           title: "Detached Child",
           version: { number: 5 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-400/Detached+Child" }
         }
       },
@@ -1098,6 +1197,7 @@ describe("fetchConfluencePageTree", () => {
           id: "page-500",
           title: "Accessible Sibling",
           version: { number: 6 },
+          body: { storage: { value: "<p>storage</p>" } },
           _links: { webui: "/wiki/spaces/SPACE/pages/page-500/Accessible+Sibling" }
         }
       }

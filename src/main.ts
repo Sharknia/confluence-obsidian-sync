@@ -5,6 +5,7 @@ import {
   PUSH_CURRENT_PAGE_COMMAND_ID
 } from "./commands/commandIds";
 import { runPullTreeCommand } from "./commands/pullTreeCommand";
+import type { ProjectStorageAdapter } from "./projects/projectStorage";
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
 import {
   DEFAULT_CONFLUENCE_SYNC_SETTINGS,
@@ -44,6 +45,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       callback: () => {
         void runPullTreeCommand({
           settings: this.settings,
+          storage: createVaultStorageAdapter(this),
           showNotice: (message) => new Notice(message)
         });
       }
@@ -57,4 +59,13 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       }
     });
   }
+}
+
+function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): ProjectStorageAdapter {
+  return {
+    exists: (path) => plugin.app.vault.adapter.exists(path),
+    mkdir: (path) => plugin.app.vault.adapter.mkdir(path),
+    read: (path) => plugin.app.vault.adapter.read(path),
+    write: (path, data) => plugin.app.vault.adapter.write(path, data)
+  };
 }

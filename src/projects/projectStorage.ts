@@ -1,3 +1,4 @@
+import type { PageMarkdownFile } from "./pageMarkdown";
 import type { ConfluenceProjectManifest, ProjectPaths, RootContentType } from "./projectManifest";
 
 export interface ProjectStorageAdapter {
@@ -19,6 +20,19 @@ export interface WriteProjectManifestFailure {
 }
 
 export type WriteProjectManifestResult = WriteProjectManifestSuccess | WriteProjectManifestFailure;
+
+export interface WriteMarkdownPagesSuccess {
+  ok: true;
+  writtenFileCount: number;
+}
+
+export interface WriteMarkdownPagesFailure {
+  ok: false;
+  reason: "storage-error";
+  message: string;
+}
+
+export type WriteMarkdownPagesResult = WriteMarkdownPagesSuccess | WriteMarkdownPagesFailure;
 
 function buildManifestAlreadyExistsFailure(): WriteProjectManifestFailure {
   return {
@@ -45,6 +59,56 @@ async function ensureFolderExists(storage: ProjectStorageAdapter, path: string):
 
   if (!folderExists) {
     await storage.mkdir(path);
+  }
+}
+
+function buildParentFolderPaths(vaultPath: string): string[] {
+  const pathSegments = vaultPath.split("/").filter((segment) => segment.length > 0);
+  const parentPathSegments = pathSegments.slice(0, -1);
+  const parentFolderPaths: string[] = [];
+
+  for (let index = 0; index < parentPathSegments.length; index += 1) {
+    parentFolderPaths.push(parentPathSegments.slice(0, index + 1).join("/"));
+  }
+
+  return parentFolderPaths;
+}
+
+function buildMarkdownStorageErrorFailure(): WriteMarkdownPagesFailure {
+  return {
+    ok: false,
+    reason: "storage-error",
+    message: "Markdown 파일을 저장할 수 없습니다."
+  };
+}
+
+export async function writeMarkdownPages(
+  storage: ProjectStorageAdapter,
+  files: PageMarkdownFile[]
+): Promise<WriteMarkdownPagesResult> {
+  const ensuredFolderPaths = new Set<string>();
+
+  try {
+    for (const file of files) {
+      for (const parentFolderPath of buildParentFolderPaths(file.vaultPath)) {
+        if (ensuredFolderPaths.has(parentFolderPath)) {
+          continue;
+        }
+
+        // 상위 폴더는 루트부터 자식 방향으로 차례대로 보장한다.
+        await ensureFolderExists(storage, parentFolderPath);
+        ensuredFolderPaths.add(parentFolderPath);
+      }
+
+      await storage.write(file.vaultPath, file.content);
+    }
+
+    return {
+      ok: true,
+      writtenFileCount: files.length
+    };
+  } catch {
+    return buildMarkdownStorageErrorFailure();
   }
 }
 
