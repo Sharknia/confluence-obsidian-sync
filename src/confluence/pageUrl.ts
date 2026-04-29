@@ -33,6 +33,13 @@ export interface ConfluenceRootUrlParseFailure {
 
 export type ConfluenceRootUrlParseResult = ConfluenceRootUrlParseSuccess | ConfluenceRootUrlParseFailure;
 
+export function buildConfluencePageViewUrl(rawBaseUrl: string, pageId: string): string {
+  const normalizedBaseUrl = normalizeConfluenceBaseUrl(rawBaseUrl);
+  const baseUrl = new URL(normalizedBaseUrl);
+
+  return `${baseUrl.origin}/wiki/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}`;
+}
+
 export function parseConfluencePageUrl(rawRootUrl: string, rawBaseUrl: string): ConfluencePageUrlParseResult {
   const normalizedBaseUrl = normalizeConfluenceBaseUrl(rawBaseUrl);
 

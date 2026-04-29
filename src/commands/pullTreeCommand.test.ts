@@ -569,6 +569,67 @@ Local draft
     expect(notices).toEqual(["Force Pull을 취소했습니다. 변경된 로컬 파일 목록을 리포트로 남겼습니다."]);
   });
 
+  it("Force Pull Tree overwrites local changes without creating detached current-page backups", async () => {
+    const notices: string[] = [];
+    const localBody = "Local edit\n";
+    const localContent = `---
+confluencePageId: "100"
+confluenceVersion: 1
+confluenceContentHash: "${calculateMarkdownBodyHash("Old remote\n")}"
+---
+
+${localBody}`;
+    const storage = createStorageMock({
+      exists: (path) => Promise.resolve(path === "confluence/Root/Root.md"),
+      read: (path) => (path === "confluence/Root/Root.md" ? Promise.resolve(localContent) : Promise.resolve("")),
+      list: () =>
+        Promise.resolve({
+          files: ["confluence/Root/Root.md"],
+          folders: []
+        })
+    });
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      mode: "force",
+      confirmForcePull: () => true,
+      fetchTree: () =>
+        Promise.resolve({
+          ok: true,
+          root: {
+            pageId: "100",
+            title: "Root",
+            parentId: null,
+            versionNumber: 2,
+            bodyStorageValue: "<p>Remote</p>",
+            sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+            depth: 0,
+            childPosition: 0,
+            children: []
+          },
+          pages: [
+            {
+              pageId: "100",
+              title: "Root",
+              parentId: null,
+              versionNumber: 2,
+              bodyStorageValue: "<p>Remote</p>",
+              sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+              depth: 0,
+              childPosition: 0
+            }
+          ],
+          errors: []
+        }),
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(storage.writtenFiles.some((file) => file.path.includes(".local-backup-"))).toBe(false);
+    expect(notices[0]).toContain("Force Pull 완료");
+    expect(notices[0]).toContain("강제 덮어쓰기 1개");
+  });
+
   it("Confluence에서 사라진 파일은 안전 삭제 폴더로 이동한다", async () => {
     const notices: string[] = [];
     const openedReports: string[] = [];

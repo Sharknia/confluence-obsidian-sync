@@ -62,6 +62,20 @@ export interface BuildPageMarkdownFilesInput {
   readExistingFile?: (path: string) => Promise<string>;
 }
 
+export interface UpdatePageMarkdownFrontmatterAfterPushInput {
+  versionNumber: number;
+  contentHash: string;
+}
+
+export interface CreatePageMarkdownContentInput {
+  pageId: string;
+  title: string;
+  versionNumber: number;
+  sourceUrl: string;
+  parentId: string | null;
+  bodyMarkdown: string;
+}
+
 export function createSafeMarkdownFileName(title: string, pageId: string): string {
   return `${createSafeFileBaseName(title, `confluence-page-${createSafePageIdSegment(pageId)}`)}${MARKDOWN_FILE_EXTENSION}`;
 }
@@ -95,6 +109,68 @@ export function parsePageMarkdownMetadata(markdown: string): ParsedPageMarkdownM
     contentHash: readQuotedFrontmatterValue(frontmatter, "confluenceContentHash"),
     bodyMarkdown: removeFrontmatterBodySeparator(markdown.slice(frontmatterMatch[0].length)),
   };
+}
+
+export function updatePageMarkdownFrontmatterAfterPush(
+  markdown: string,
+  input: UpdatePageMarkdownFrontmatterAfterPushInput,
+): string | null {
+  const frontmatterMatch = markdown.match(FRONTMATTER_PATTERN);
+
+  if (frontmatterMatch === null) {
+    return null;
+  }
+
+  const originalFrontmatter = frontmatterMatch[1] ?? "";
+  const frontmatterWithVersion = upsertFrontmatterLine(
+    originalFrontmatter,
+    "confluenceVersion",
+    String(input.versionNumber),
+  );
+  const updatedFrontmatter = upsertFrontmatterLine(
+    frontmatterWithVersion,
+    "confluenceContentHash",
+    JSON.stringify(input.contentHash),
+  );
+
+  return `---\n${updatedFrontmatter}\n---\n${markdown.slice(frontmatterMatch[0].length)}`;
+}
+
+export function createPageMarkdownContent(input: CreatePageMarkdownContentInput): string {
+  return `${createFrontmatter(
+    {
+      pageId: input.pageId,
+      title: input.title,
+      versionNumber: input.versionNumber,
+      sourceUrl: input.sourceUrl,
+      parentId: input.parentId,
+      bodyStorageValue: "",
+      depth: 0,
+      childPosition: 0
+    },
+    input.bodyMarkdown
+  )}\n\n${input.bodyMarkdown}`;
+}
+
+export function createDetachedPageBackupMarkdown(markdown: string): string {
+  const metadata = parsePageMarkdownMetadata(markdown);
+  const bodyMarkdown = metadata?.bodyMarkdown ?? markdown;
+
+  return `# Confluence 연결이 해제된 백업본
+
+이 파일은 Pull Current Page 실행 전에 보존한 로컬 수정본입니다. Confluence pageId, version, content hash metadata를 제거했으므로 Push/Pull 대상이 아닙니다.
+
+${bodyMarkdown}`;
+}
+
+export function createCurrentPageBackupPath(originalPath: string, now: Date, collisionIndex: number): string {
+  const timestamp = now.toISOString().replace(/[:.]/gu, "-");
+  const suffix = collisionIndex === 0 ? "" : ` (${collisionIndex})`;
+  const extensionIndex = originalPath.toLowerCase().endsWith(MARKDOWN_FILE_EXTENSION)
+    ? originalPath.length - MARKDOWN_FILE_EXTENSION.length
+    : originalPath.length;
+
+  return `${originalPath.slice(0, extensionIndex)}.local-backup-${timestamp}${suffix}${MARKDOWN_FILE_EXTENSION}`;
 }
 
 function removeFrontmatterBodySeparator(markdownBody: string): string {
@@ -151,7 +227,14 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
       title: page.title,
       vaultPath,
       warnings: markdownConversion.warnings,
-      content: `${createFrontmatter(page, markdownBody)}\n\n${markdownBody}`,
+      content: createPageMarkdownContent({
+        pageId: page.pageId,
+        title: page.title,
+        versionNumber: page.versionNumber,
+        sourceUrl: page.sourceUrl,
+        parentId: page.parentId,
+        bodyMarkdown: markdownBody
+      }),
     });
   }
 
@@ -403,6 +486,28 @@ function readNestedConfluencePageId(frontmatter: string): string | null {
   const match = frontmatter.match(/^confluence:\s*\n(?:\s+[A-Za-z0-9_-]+:\s*.*\n)*?\s+pageId:\s*"([^"]*)"\s*$/mu);
 
   return match?.[1] ?? null;
+}
+
+function upsertFrontmatterLine(frontmatter: string, key: string, value: string): string {
+  const lines = frontmatter.split("\n");
+  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*:`, "u");
+  const firstExistingIndex = lines.findIndex((line) => keyPattern.test(line));
+
+  if (firstExistingIndex >= 0) {
+    const updatedLines = lines.filter((line, index) => index === firstExistingIndex || !keyPattern.test(line));
+    updatedLines[firstExistingIndex] = `${key}: ${value}`;
+    return updatedLines.join("\n");
+  }
+
+  const versionIndex = lines.findIndex((line) => /^\s*confluenceVersion\s*:/u.test(line));
+  const insertIndex = key === "confluenceContentHash" && versionIndex >= 0 ? versionIndex + 1 : lines.length;
+  lines.splice(insertIndex, 0, `${key}: ${value}`);
+
+  return lines.join("\n");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function createJiraIssueUrl(sourceUrl: string, issueKey: string): string | null {

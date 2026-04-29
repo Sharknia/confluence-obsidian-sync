@@ -2,10 +2,13 @@ import { Notice, Plugin, type TFile } from "obsidian";
 import {
   FORCE_PULL_TREE_COMMAND_ID,
   OPEN_SYNC_PANEL_COMMAND_ID,
+  PULL_CURRENT_PAGE_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
   PUSH_CURRENT_PAGE_COMMAND_ID
 } from "./commands/commandIds";
+import { runPullCurrentPageCommand } from "./commands/pullCurrentPageCommand";
 import { runPullTreeCommand } from "./commands/pullTreeCommand";
+import { runPushCurrentPageCommand } from "./commands/pushCurrentPageCommand";
 import { buildPullReportPath } from "./projects/pullReport";
 import type { ProjectStorageAdapter } from "./projects/projectStorage";
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
@@ -38,6 +41,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
           actions: {
             onPullTree: () => this.runPullTree(),
             onForcePullTree: () => this.runForcePullTree(),
+            onPullCurrentPage: () => this.pullCurrentPage(),
             onPushCurrentPage: () => this.pushCurrentPage(),
             onOpenRootLink: () => this.openCurrentProjectRootLink(),
             onOpenLatestReport: () => this.openCurrentProjectLatestReport()
@@ -85,10 +89,18 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: PULL_CURRENT_PAGE_COMMAND_ID,
+      name: "Pull Current Page",
+      callback: () => {
+        void this.pullCurrentPage();
+      }
+    });
+
+    this.addCommand({
       id: PUSH_CURRENT_PAGE_COMMAND_ID,
       name: "Push Current Page",
       callback: () => {
-        this.pushCurrentPage();
+        void this.pushCurrentPage();
       }
     });
   }
@@ -142,8 +154,42 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     await this.refreshSyncPanelViews();
   }
 
-  private pushCurrentPage(): void {
-    new Notice("Confluence Push Current Page는 단일 문서 업로드 Epic에서 구현됩니다.");
+  private async pullCurrentPage(): Promise<void> {
+    await runPullCurrentPageCommand({
+      settings: this.settings,
+      storage: createVaultStorageAdapter(this),
+      getActiveMarkdownFile: () => {
+        const activeFile = this.app.workspace.getActiveFile();
+
+        if (activeFile === null || activeFile.extension !== "md") {
+          return null;
+        }
+
+        return { path: activeFile.path };
+      },
+      showNotice: (message) => new Notice(message)
+    });
+
+    await this.refreshSyncPanelViews();
+  }
+
+  private async pushCurrentPage(): Promise<void> {
+    await runPushCurrentPageCommand({
+      settings: this.settings,
+      storage: createVaultStorageAdapter(this),
+      getActiveMarkdownFile: () => {
+        const activeFile = this.app.workspace.getActiveFile();
+
+        if (activeFile === null || activeFile.extension !== "md") {
+          return null;
+        }
+
+        return { path: activeFile.path };
+      },
+      showNotice: (message) => new Notice(message)
+    });
+
+    await this.refreshSyncPanelViews();
   }
 
   private openCurrentProjectRootLink(): void {

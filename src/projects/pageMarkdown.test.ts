@@ -7,8 +7,12 @@ import type {
 import {
   buildPageMarkdownFiles,
   calculateMarkdownBodyHash,
+  createCurrentPageBackupPath,
+  createDetachedPageBackupMarkdown,
+  createPageMarkdownContent,
   createSafeMarkdownFileName,
   parsePageMarkdownMetadata,
+  updatePageMarkdownFrontmatterAfterPush,
 } from "./pageMarkdown";
 
 function createPage(overrides: Partial<ConfluencePageTreePage>): ConfluencePageTreePage {
@@ -485,5 +489,174 @@ Other content
     });
 
     expect(files.map((file) => file.pageId)).toEqual(["100"]);
+  });
+});
+
+describe("createPageMarkdownContent", () => {
+  it("creates frontmatter and body for a single pulled page", () => {
+    const content = createPageMarkdownContent({
+      pageId: "100",
+      title: "Root",
+      versionNumber: 4,
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      parentId: null,
+      bodyMarkdown: "Hello\n",
+    });
+
+    expect(content).toBe(`---
+confluencePageId: "100"
+confluenceTitle: "Root"
+confluenceVersion: 4
+confluenceSourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root"
+confluenceParentId: null
+confluenceContentHash: "${calculateMarkdownBodyHash("Hello\n")}"
+---
+
+Hello
+`);
+  });
+});
+
+describe("createDetachedPageBackupMarkdown", () => {
+  it("removes Confluence frontmatter and prepends detached backup notice", () => {
+    const backup = createDetachedPageBackupMarkdown(`---
+confluencePageId: "100"
+confluenceVersion: 3
+confluenceContentHash: "sha256:old"
+---
+
+Local draft
+`);
+
+    expect(backup).toBe(`# Confluence 연결이 해제된 백업본
+
+이 파일은 Pull Current Page 실행 전에 보존한 로컬 수정본입니다. Confluence pageId, version, content hash metadata를 제거했으므로 Push/Pull 대상이 아닙니다.
+
+Local draft
+`);
+  });
+});
+
+describe("createCurrentPageBackupPath", () => {
+  it("adds timestamp and suffix before markdown extension", () => {
+    expect(
+      createCurrentPageBackupPath(
+        "confluence/Root/Page.md",
+        new Date("2026-04-29T10:11:12.000Z"),
+        2,
+      ),
+    ).toBe("confluence/Root/Page.local-backup-2026-04-29T10-11-12-000Z (2).md");
+  });
+});
+
+describe("updatePageMarkdownFrontmatterAfterPush", () => {
+  it("updates confluenceVersion and confluenceContentHash while preserving body", () => {
+    const original = `---
+confluencePageId: "100"
+confluenceTitle: "Root"
+confluenceVersion: 3
+confluenceContentHash: "sha256:old"
+---
+
+Hello
+`;
+
+    expect(
+      updatePageMarkdownFrontmatterAfterPush(original, {
+        versionNumber: 4,
+        contentHash: "sha256:new",
+      }),
+    ).toBe(`---
+confluencePageId: "100"
+confluenceTitle: "Root"
+confluenceVersion: 4
+confluenceContentHash: "sha256:new"
+---
+
+Hello
+`);
+  });
+
+  it("adds missing confluenceContentHash after confluenceVersion", () => {
+    const original = `---
+confluencePageId: "100"
+confluenceVersion: 3
+---
+
+Hello
+`;
+
+    expect(
+      updatePageMarkdownFrontmatterAfterPush(original, {
+        versionNumber: 4,
+        contentHash: "sha256:new",
+      }),
+    ).toBe(`---
+confluencePageId: "100"
+confluenceVersion: 4
+confluenceContentHash: "sha256:new"
+---
+
+Hello
+`);
+  });
+
+  it("updates indented existing keys without adding duplicates", () => {
+    const original = `---
+confluencePageId: "100"
+  confluenceVersion: 3
+  confluenceContentHash: "sha256:old"
+---
+
+Hello
+`;
+
+    expect(
+      updatePageMarkdownFrontmatterAfterPush(original, {
+        versionNumber: 4,
+        contentHash: "sha256:new",
+      }),
+    ).toBe(`---
+confluencePageId: "100"
+confluenceVersion: 4
+confluenceContentHash: "sha256:new"
+---
+
+Hello
+`);
+  });
+
+  it("preserves nested legacy pageId while adding top-level push metadata", () => {
+    const original = `---
+confluence:
+  pageId: "100"
+---
+
+Legacy body
+`;
+
+    expect(
+      updatePageMarkdownFrontmatterAfterPush(original, {
+        versionNumber: 4,
+        contentHash: "sha256:new",
+      }),
+    ).toBe(`---
+confluence:
+  pageId: "100"
+confluenceVersion: 4
+confluenceContentHash: "sha256:new"
+---
+
+Legacy body
+`);
+  });
+
+  it("returns null when the file has no frontmatter", () => {
+    expect(
+      updatePageMarkdownFrontmatterAfterPush("Hello\n", {
+        versionNumber: 4,
+        contentHash: "sha256:new",
+      }),
+    ).toBeNull();
   });
 });

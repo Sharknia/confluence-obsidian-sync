@@ -3,9 +3,17 @@ import type { SyncPanelState } from "./syncPanelState";
 export interface SyncPanelActions {
   onPullTree: () => void | Promise<void>;
   onForcePullTree: () => void | Promise<void>;
+  onPullCurrentPage: () => void | Promise<void>;
   onPushCurrentPage: () => void | Promise<void>;
   onOpenRootLink: () => void | Promise<void>;
   onOpenLatestReport: () => void | Promise<void>;
+}
+
+interface SyncPanelProjectAction {
+  label: string;
+  title: string;
+  description: string;
+  onClick: () => void | Promise<void>;
 }
 
 export function renderSyncPanelContent(
@@ -65,28 +73,53 @@ export function renderSyncPanelContent(
   actionSectionEl.className = "confluence-sync-panel-actions";
   const actionStatusEl = appendTextElement(actionSectionEl, "p", "");
   actionStatusEl.setAttribute("aria-live", "polite");
+  const actionListEl = createElement(containerEl, "div");
+  actionListEl.className = "confluence-sync-panel-action-list";
   const actionButtons: HTMLButtonElement[] = [];
-  actionButtons.push(
-    appendPullButton(
-      actionSectionEl,
-      "Pull Tree",
-      actions.onPullTree,
-      !state.canRunProjectActions,
-      actionStatusEl,
-      actionButtons
-    )
-  );
-  actionButtons.push(
-    appendPullButton(
-      actionSectionEl,
-      "Force Pull Tree",
-      actions.onForcePullTree,
-      !state.canRunProjectActions,
-      actionStatusEl,
-      actionButtons
-    )
-  );
+
+  for (const action of createProjectActions(actions)) {
+    actionButtons.push(
+      appendProjectActionCard(
+        actionListEl,
+        action,
+        !state.canRunProjectActions,
+        actionStatusEl,
+        actionButtons
+      )
+    );
+  }
+
+  actionSectionEl.append(actionListEl);
   containerEl.append(actionSectionEl);
+}
+
+function createProjectActions(actions: SyncPanelActions): SyncPanelProjectAction[] {
+  return [
+    {
+      label: "Pull Tree",
+      title: "전체 내려받기",
+      description: "현재 프로젝트의 Confluence 트리를 로컬 Markdown으로 갱신합니다.",
+      onClick: actions.onPullTree
+    },
+    {
+      label: "Force Pull Tree",
+      title: "전체 강제 내려받기",
+      description: "로컬 수정본을 백업 없이 원격 본문으로 덮어씁니다.",
+      onClick: actions.onForcePullTree
+    },
+    {
+      label: "Pull Current Page",
+      title: "현재 문서 내려받기",
+      description: "현재 열린 Markdown 파일 1개만 원격 최신 본문으로 갱신합니다. 로컬 수정본이 있으면 연결이 해제된 백업본을 먼저 생성합니다.",
+      onClick: actions.onPullCurrentPage
+    },
+    {
+      label: "Push Current Page",
+      title: "현재 문서 올리기",
+      description: "현재 열린 Markdown 파일 1개를 기존 Confluence 페이지에 업로드합니다.",
+      onClick: actions.onPushCurrentPage
+    }
+  ];
 }
 
 function appendSection(containerEl: HTMLElement, heading: string): HTMLElement {
@@ -137,30 +170,38 @@ function appendButton(
   return buttonEl;
 }
 
-function appendPullButton(
+function appendProjectActionCard(
   containerEl: HTMLElement,
-  label: string,
-  onClick: () => void | Promise<void>,
+  action: SyncPanelProjectAction,
   disabled: boolean,
   statusEl: HTMLElement,
   actionButtons: HTMLButtonElement[]
 ): HTMLButtonElement {
-  const buttonEl = createElement(containerEl, "button");
-  buttonEl.textContent = label;
-  buttonEl.disabled = disabled;
-  buttonEl.addEventListener("click", () => {
-    if (buttonEl.disabled) {
+  const cardEl = createElement(containerEl, "button");
+  cardEl.className = "confluence-sync-panel-action-card";
+  cardEl.type = "button";
+  cardEl.disabled = disabled;
+  cardEl.setAttribute("aria-label", action.label);
+
+  const textEl = createElement(containerEl, "div");
+  textEl.className = "confluence-sync-panel-action-text";
+  appendTextElement(textEl, "strong", action.title);
+  appendTextElement(textEl, "span", action.description);
+
+  cardEl.append(textEl);
+  cardEl.addEventListener("click", () => {
+    if (cardEl.disabled) {
       return;
     }
 
-    void runPullAction(actionButtons, buttonEl, statusEl, label, onClick);
+    void runProjectAction(actionButtons, cardEl, statusEl, action.label, action.onClick);
   });
-  containerEl.append(buttonEl);
+  containerEl.append(cardEl);
 
-  return buttonEl;
+  return cardEl;
 }
 
-async function runPullAction(
+async function runProjectAction(
   actionButtons: HTMLButtonElement[],
   buttonEl: HTMLButtonElement,
   statusEl: HTMLElement,
@@ -168,7 +209,7 @@ async function runPullAction(
   onClick: () => void | Promise<void>
 ): Promise<void> {
   setButtonsDisabled(actionButtons, true);
-  buttonEl.textContent = `${label} 진행 중...`;
+  buttonEl.setAttribute("aria-busy", "true");
   statusEl.textContent = `${label} 진행 중입니다...`;
 
   try {
@@ -178,7 +219,7 @@ async function runPullAction(
     statusEl.textContent = `${label} 실패`;
   } finally {
     setButtonsDisabled(actionButtons, false);
-    buttonEl.textContent = label;
+    buttonEl.removeAttribute("aria-busy");
   }
 }
 

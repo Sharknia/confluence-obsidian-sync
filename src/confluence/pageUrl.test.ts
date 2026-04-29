@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfluencePageUrl, parseConfluenceRootUrl } from "./pageUrl";
+import { buildConfluencePageViewUrl, parseConfluencePageUrl, parseConfluenceRootUrl } from "./pageUrl";
 
 describe("parseConfluencePageUrl", () => {
   it("parses a space root page URL and strips the hash from the stored root URL", () => {
@@ -236,5 +236,13 @@ describe("parseConfluenceRootUrl", () => {
       reason: "missing-root-content-id",
       message: "Confluence 루트 콘텐츠 URL에서 pageId 또는 folderId를 찾을 수 없습니다."
     });
+  });
+});
+
+describe("buildConfluencePageViewUrl", () => {
+  it("builds a legacy view URL that can open a page by id", () => {
+    expect(buildConfluencePageViewUrl("https://selta.atlassian.net/", "100/200")).toBe(
+      "https://selta.atlassian.net/wiki/pages/viewpage.action?pageId=100%2F200"
+    );
   });
 });
