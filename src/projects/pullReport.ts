@@ -7,6 +7,9 @@ export interface PullReportSummary {
   unchangedCount: number;
   fetchFailureCount: number;
   conversionWarningCount: number;
+  conversionFailureCount: number;
+  fetchFailureLines: string[];
+  conversionIssueLines: string[];
   safeDeleteLines: string[];
   skippedLocalChangeLines: string[];
 }
@@ -37,6 +40,9 @@ export function parsePullReportMarkdown(markdown: string): PullReportSummary | n
     unchangedCount: readCountValue(markdown, "변경 없음"),
     fetchFailureCount: readCountValue(markdown, "조회 실패"),
     conversionWarningCount: readCountValue(markdown, "변환 경고"),
+    conversionFailureCount: readCountValue(markdown, "변환 실패"),
+    fetchFailureLines: readSectionLines(markdown, "조회 실패 상세"),
+    conversionIssueLines: readSectionLines(markdown, "변환 문제 상세"),
     safeDeleteLines: readSectionLines(markdown, "안전 삭제"),
     skippedLocalChangeLines: readSectionLines(markdown, "로컬 수정 스킵")
   };
@@ -56,12 +62,25 @@ function readCountValue(markdown: string, label: string): number {
 }
 
 function readSectionLines(markdown: string, heading: string): string[] {
-  const escapedHeading = escapeRegExp(heading);
-  const match = markdown.match(new RegExp(`^## ${escapedHeading}\n([\\s\\S]*?)(?=\n## |\n*$)`, "mu"));
-  const sectionBody = match?.[1] ?? "";
+  const lines = markdown.split("\n");
+  const headingLine = `## ${heading}`;
+  const headingIndex = lines.findIndex((line) => line.trim() === headingLine);
 
-  return sectionBody
-    .split("\n")
+  if (headingIndex === -1) {
+    return [];
+  }
+
+  const sectionLines: string[] = [];
+
+  for (const line of lines.slice(headingIndex + 1)) {
+    if (line.startsWith("## ")) {
+      break;
+    }
+
+    sectionLines.push(line);
+  }
+
+  return sectionLines
     .map((line) => line.trim())
     .filter((line) => line.startsWith("- ") && line !== "- 없음");
 }

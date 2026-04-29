@@ -195,6 +195,47 @@ Local draft
     ]);
   });
 
+  it("requires explicit confirmation before backing up and overwriting local changes", async () => {
+    const notices: string[] = [];
+    const storage = createStorage({
+      "confluence/Root/Root.md": `---
+confluencePageId: "100"
+confluenceVersion: 3
+confluenceContentHash: "${calculateMarkdownBodyHash("Original remote\n")}"
+---
+
+Local draft
+`
+    });
+
+    await runPullCurrentPageCommand({
+      settings: createSettings(),
+      storage,
+      getActiveMarkdownFile: () => ({ path: "confluence/Root/Root.md" }),
+      fetchPage: () =>
+        Promise.resolve({
+          ok: true,
+          page: {
+            pageId: "100",
+            title: "Root",
+            parentId: null,
+            versionNumber: 4,
+            bodyStorageValue: "<p>Remote</p>"
+          }
+        }),
+      confirmOverwriteLocalChanges: (message) => {
+        expect(message).toBe(
+          "현재 파일에 로컬 수정사항이 있습니다. 연결이 해제된 백업본을 만든 뒤 현재 파일을 원격 본문으로 덮어씁니다.\n\n파일: confluence/Root/Root.md\npageId: 100\n원격 version: 4\n\n계속하시겠습니까?"
+        );
+        return false;
+      },
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(storage.writes).toEqual([]);
+    expect(notices).toEqual(["Pull Current Page를 취소했습니다."]);
+  });
+
   it("shows remote API failure message", async () => {
     const notices: string[] = [];
 

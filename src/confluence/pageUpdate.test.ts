@@ -97,6 +97,11 @@ describe("fetchConfluencePageForPush", () => {
       message: "Confluence 페이지 version이 충돌했습니다. Pull Tree 후 다시 시도하세요."
     },
     {
+      status: 429,
+      reason: "rate-limited",
+      message: "Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"
+    },
+    {
       status: 500,
       reason: "api-error",
       message: "Confluence API 오류가 발생했습니다. HTTP 500"
@@ -211,6 +216,11 @@ describe("updateConfluencePageBody", () => {
       status: 409,
       reason: "version-conflict",
       message: "Confluence 페이지 version이 충돌했습니다. Pull Tree 후 다시 시도하세요."
+    },
+    {
+      status: 429,
+      reason: "rate-limited",
+      message: "Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"
     },
     {
       status: 503,
@@ -366,12 +376,17 @@ describe("fetchConfluencePageForPull", () => {
     {
       status: 403,
       reason: "permission-denied",
-      message: "Confluence 페이지에 접근할 권한이 없습니다."
+      message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
     },
     {
       status: 404,
       reason: "not-found",
       message: "Confluence 페이지를 찾을 수 없습니다."
+    },
+    {
+      status: 429,
+      reason: "rate-limited",
+      message: "Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"
     },
     {
       status: 500,

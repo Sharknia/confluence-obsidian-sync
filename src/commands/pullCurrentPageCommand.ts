@@ -30,6 +30,7 @@ export interface RunPullCurrentPageCommandInput {
   getActiveMarkdownFile: () => ActiveMarkdownFile | null;
   fetchPage?: PullCurrentPageFetcher;
   now?: () => Date;
+  confirmOverwriteLocalChanges?: (message: string) => boolean;
   showNotice: (message: string) => void;
 }
 
@@ -45,6 +46,7 @@ export async function runPullCurrentPageCommand({
   getActiveMarkdownFile,
   fetchPage = defaultPullCurrentPageFetcher,
   now = () => new Date(),
+  confirmOverwriteLocalChanges,
   showNotice
 }: RunPullCurrentPageCommandInput): Promise<void> {
   const missingFields = getMissingConfluenceConnectionFields(settings);
@@ -104,13 +106,34 @@ export async function runPullCurrentPageCommand({
     bodyMarkdown: remoteBodyMarkdown
   });
   let backupPath: string | null;
+  const hasLocalChanges = calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash;
+
+  if (hasLocalChanges) {
+    const shouldContinue =
+      confirmOverwriteLocalChanges?.(
+        [
+          "현재 파일에 로컬 수정사항이 있습니다. 연결이 해제된 백업본을 만든 뒤 현재 파일을 원격 본문으로 덮어씁니다.",
+          "",
+          `파일: ${activeFile.path}`,
+          `pageId: ${metadata.pageId}`,
+          `원격 version: ${remotePageResult.page.versionNumber}`,
+          "",
+          "계속하시겠습니까?"
+        ].join("\n")
+      ) ?? true;
+
+    if (!shouldContinue) {
+      showNotice("Pull Current Page를 취소했습니다.");
+      return;
+    }
+  }
 
   try {
     backupPath = await maybeCreateDetachedBackup({
       storage,
       originalPath: activeFile.path,
       originalContent,
-      hasLocalChanges: calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash,
+      hasLocalChanges,
       now: now()
     });
     await storage.write(activeFile.path, remoteContent);

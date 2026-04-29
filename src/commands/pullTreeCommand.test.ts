@@ -227,6 +227,66 @@ describe("runPullTreeCommand", () => {
     ]);
   });
 
+  it("writes fetch failure and conversion issue details to latest report", async () => {
+    const notices: string[] = [];
+    const storage = createStorageMock();
+    const fetchTree: PullTreeFetcher = () => {
+      const rootPage = {
+        pageId: "100",
+        title: "Root",
+        parentId: null,
+        versionNumber: 1,
+        bodyStorageValue: '<ac:structured-macro ac:name="toc" />',
+        sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+        depth: 0,
+        childPosition: 0
+      };
+
+      return Promise.resolve({
+        ok: true,
+        root: { ...rootPage, children: [] },
+        pages: [rootPage],
+        errors: [
+          {
+            pageId: "200",
+            title: "Private Child",
+            reason: "permission-denied",
+            message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
+          },
+          {
+            pageId: "300",
+            title: "Busy Child",
+            reason: "rate-limited",
+            message: "Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"
+          }
+        ]
+      });
+    };
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      showNotice: (message) => notices.push(message)
+    });
+
+    const report = getPullReportWrites(storage)[0]?.data ?? "";
+    expect(report).toContain("## 조회 실패 상세");
+    expect(report).toContain(
+      '- pageId=200 title="Private Child" reason=permission-denied message="Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."'
+    );
+    expect(report).toContain(
+      '- pageId=300 title="Busy Child" reason=rate-limited message="Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"'
+    );
+    expect(report).toContain("## 변환 문제 상세");
+    expect(report).toContain(
+      '- pageId=100 title="Root" severity=warning message="지원하지 않는 Confluence macro가 Markdown 경고로 변환됐습니다: toc"'
+    );
+    expect(notices).toEqual([
+      "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 조회 실패 2개, 변환 경고 1개"
+    ]);
+  });
+
   it("Markdown 저장에 실패하면 저장 실패 Notice를 안내한다", async () => {
     const notices: string[] = [];
     const storage = createStorageMock({

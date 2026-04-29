@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { runPushCurrentPageCommand, type PushPageFetcher, type PushPageUpdater } from "./pushCurrentPageCommand";
+import { calculateMarkdownBodyHash } from "../projects/pageMarkdown";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
@@ -37,16 +38,24 @@ function createStorage(content: string): StorageMock {
 }
 
 function createMarkdown(versionNumber = 3): string {
+  return createMarkdownWithContentHash(versionNumber, "sha256:old");
+}
+
+function createMarkdownWithContentHash(versionNumber: number, contentHash: string): string {
   return `---
 confluencePageId: "100"
 confluenceVersion: ${versionNumber}
-confluenceContentHash: "sha256:old"
+confluenceContentHash: "${contentHash}"
 ---
 
 # Title
 
 Hello
 `;
+}
+
+function createUnchangedMarkdown(versionNumber = 3): string {
+  return createMarkdownWithContentHash(versionNumber, calculateMarkdownBodyHash("# Title\n\nHello\n"));
 }
 
 describe("runPushCurrentPageCommand", () => {
@@ -122,6 +131,30 @@ describe("runPushCurrentPageCommand", () => {
     expect(storage.writes).toEqual([]);
   });
 
+  it("skips push when local markdown body has not changed since the last synced hash", async () => {
+    const notices: string[] = [];
+    const storage = createStorage(createUnchangedMarkdown(3));
+    const fetchPage: PushPageFetcher = () =>
+      Promise.resolve({ ok: true, page: { pageId: "100", title: "Root", versionNumber: 3 } });
+    const updatePage = vi.fn<PushPageUpdater>();
+
+    await runPushCurrentPageCommand({
+      settings: createSettings(),
+      storage,
+      getActiveMarkdownFile: () => ({ path: "confluence/Root/Root.md" }),
+      fetchPage,
+      updatePage,
+      confirmPush: () => {
+        throw new Error("confirmPush should not be called for unchanged content");
+      },
+      showNotice: (message) => notices.push(message),
+    });
+
+    expect(updatePage).not.toHaveBeenCalled();
+    expect(storage.writes).toEqual([]);
+    expect(notices).toEqual(["Push할 변경사항이 없습니다. 로컬 본문이 마지막 동기화 상태와 같습니다."]);
+  });
+
   it("blocks push when markdown conversion rejects unsupported content", async () => {
     const notices: string[] = [];
     const storage = createStorage(`---
@@ -146,6 +179,31 @@ confluenceVersion: 3
       "Obsidian wiki link는 MVP Push에서 지원하지 않습니다. 일반 Markdown 링크로 바꾼 뒤 다시 시도하세요.",
     ]);
     expect(updatePage).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit confirmation before updating Confluence", async () => {
+    const notices: string[] = [];
+    const storage = createStorage(createMarkdown(3));
+    const updatePage = vi.fn<PushPageUpdater>();
+
+    await runPushCurrentPageCommand({
+      settings: createSettings(),
+      storage,
+      getActiveMarkdownFile: () => ({ path: "confluence/Root/Root.md" }),
+      fetchPage: () => Promise.resolve({ ok: true, page: { pageId: "100", title: "Root", versionNumber: 3 } }),
+      updatePage,
+      confirmPush: (message) => {
+        expect(message).toBe(
+          "현재 Markdown 문서를 Confluence 페이지에 업로드합니다.\n\npageId: 100\n제목: Root\n현재 version: 3\n업로드 후 version: 4\n\n계속하시겠습니까?"
+        );
+        return false;
+      },
+      showNotice: (message) => notices.push(message),
+    });
+
+    expect(updatePage).not.toHaveBeenCalled();
+    expect(storage.writes).toEqual([]);
+    expect(notices).toEqual(["Push를 취소했습니다."]);
   });
 
   it("updates Confluence and local frontmatter on success", async () => {

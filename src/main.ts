@@ -167,6 +167,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
 
         return { path: activeFile.path };
       },
+      confirmOverwriteLocalChanges: (message) => window.confirm(message),
       showNotice: (message) => new Notice(message)
     });
 
@@ -186,6 +187,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
 
         return { path: activeFile.path };
       },
+      confirmPush: (message) => window.confirm(message),
       showNotice: (message) => new Notice(message)
     });
 

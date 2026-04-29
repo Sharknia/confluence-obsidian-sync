@@ -1,10 +1,17 @@
 import { getMissingConfluenceConnectionFields, type RequiredConfluenceConnectionField } from "../confluence/authentication";
 import {
   fetchConfluenceRootContentTree,
+  type ConfluencePageTreeError,
   type ConfluenceRootContentTreeResult,
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
-import { buildPageMarkdownFiles, calculateMarkdownBodyHash, parsePageMarkdownMetadata } from "../projects/pageMarkdown";
+import {
+  buildPageMarkdownFiles,
+  calculateMarkdownBodyHash,
+  parsePageMarkdownMetadata,
+  type PageMarkdownConversionIssue,
+  type PageMarkdownFile
+} from "../projects/pageMarkdown";
 import { buildPullReportPath } from "../projects/pullReport";
 import { createPullSyncPlan } from "../projects/pullSyncPolicy";
 import {
@@ -125,10 +132,11 @@ export async function runPullTreeCommand({
       return;
     }
 
-    let markdownFiles: Awaited<ReturnType<typeof buildPageMarkdownFiles>>;
+    let markdownFiles: PageMarkdownFile[];
     let writeResult: PullSyncApplyResult;
     let syncPlan: ReturnType<typeof createPullSyncPlan>;
     let conversionWarningCount = 0;
+    let conversionFailureCount = 0;
 
     try {
       if (localMarkdownFilesResult === null) {
@@ -145,7 +153,7 @@ export async function runPullTreeCommand({
       }
 
       const localMarkdownFiles = localMarkdownFilesResult;
-      markdownFiles = await buildPageMarkdownFiles({
+      const markdownBuildResult = await buildPageMarkdownFiles({
         projectRootPath: currentProject.localFolderPath,
         root: result.root,
         pages: result.pages,
@@ -153,6 +161,7 @@ export async function runPullTreeCommand({
         pathExists: (path) => storage.exists(path),
         readExistingFile: (path) => storage.read(path)
       });
+      markdownFiles = markdownBuildResult.files;
 
       syncPlan = createPullSyncPlan(
         {
@@ -165,7 +174,12 @@ export async function runPullTreeCommand({
       );
 
       writeResult = await applyPullSyncPlan(storage, syncPlan);
-      conversionWarningCount = markdownFiles.reduce((count, file) => count + file.warnings.length, 0);
+      conversionWarningCount = markdownBuildResult.conversionIssues.filter(
+        (issue) => issue.severity === "warning"
+      ).length;
+      conversionFailureCount = markdownBuildResult.conversionIssues.filter(
+        (issue) => issue.severity === "error"
+      ).length;
 
       if (writeResult.ok) {
         const reportPath = await writePullReport(storage, currentProject.localFolderPath, {
@@ -175,7 +189,10 @@ export async function runPullTreeCommand({
           writeResult,
           syncPlan,
           fetchFailureCount: result.errors.length,
-          conversionWarningCount
+          fetchFailures: result.errors,
+          conversionIssues: markdownBuildResult.conversionIssues,
+          conversionWarningCount,
+          conversionFailureCount
         });
 
         if (openReport !== undefined) {
@@ -204,7 +221,8 @@ export async function runPullTreeCommand({
         syncPlan.overwrittenLocalChanges.length
       )}, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
         result.errors.length,
-        conversionWarningCount
+        conversionWarningCount,
+        conversionFailureCount
       )}`
     );
   } catch (error) {
@@ -219,7 +237,11 @@ function buildForceOverwriteNoticePart(mode: "normal" | "force", overwrittenCoun
   return mode === "force" ? `, 강제 덮어쓰기 ${overwrittenCount}개` : "";
 }
 
-function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCount: number): string {
+function buildSuccessNoticeSuffix(
+  fetchFailureCount: number,
+  conversionWarningCount: number,
+  conversionFailureCount: number
+): string {
   const suffixes: string[] = [];
 
   if (fetchFailureCount > 0) {
@@ -228,6 +250,10 @@ function buildSuccessNoticeSuffix(fetchFailureCount: number, conversionWarningCo
 
   if (conversionWarningCount > 0) {
     suffixes.push(`변환 경고 ${conversionWarningCount}개`);
+  }
+
+  if (conversionFailureCount > 0) {
+    suffixes.push(`변환 실패 ${conversionFailureCount}개`);
   }
 
   return suffixes.length > 0 ? `, ${suffixes.join(", ")}` : "";
@@ -287,7 +313,10 @@ interface PullReportInput {
   writeResult: Extract<PullSyncApplyResult, { ok: true }>;
   syncPlan: ReturnType<typeof createPullSyncPlan>;
   fetchFailureCount: number;
+  fetchFailures: ConfluencePageTreeError[];
+  conversionIssues: PageMarkdownConversionIssue[];
   conversionWarningCount: number;
+  conversionFailureCount: number;
 }
 
 interface ForcePullCancelReportInput {
@@ -347,6 +376,13 @@ function buildPullReportMarkdown(input: PullReportInput): string {
     `- 변경 없음: ${input.writeResult.unchangedFileCount}개`,
     `- 조회 실패: ${input.fetchFailureCount}개`,
     `- 변환 경고: ${input.conversionWarningCount}개`,
+    `- 변환 실패: ${input.conversionFailureCount}개`,
+    "",
+    "## 조회 실패 상세",
+    ...formatFetchFailures(input.fetchFailures),
+    "",
+    "## 변환 문제 상세",
+    ...formatConversionIssues(input.conversionIssues),
     "",
     "## 추가",
     ...formatWrittenFiles(input.syncPlan.filesToWrite.filter((file) => file.operation === "create")),
@@ -439,6 +475,28 @@ function formatChangedLocalFiles(files: ChangedLocalMarkdownFile[]): string[] {
   }
 
   return files.map((file) => `- ${formatVaultPathLink(file.vaultPath)} pageId=${file.pageId} reason=${file.skipReason}`);
+}
+
+function formatFetchFailures(files: PullReportInput["fetchFailures"]): string[] {
+  if (files.length === 0) {
+    return ["- 없음"];
+  }
+
+  return files.map(
+    (failure) =>
+      `- pageId=${failure.pageId} title=${JSON.stringify(failure.title ?? "")} reason=${failure.reason} message=${JSON.stringify(failure.message)}`
+  );
+}
+
+function formatConversionIssues(issues: PullReportInput["conversionIssues"]): string[] {
+  if (issues.length === 0) {
+    return ["- 없음"];
+  }
+
+  return issues.map(
+    (issue) =>
+      `- pageId=${issue.pageId} title=${JSON.stringify(issue.title)} severity=${issue.severity} message=${JSON.stringify(issue.message)}`
+  );
 }
 
 function formatVaultPathLink(vaultPath: string): string {

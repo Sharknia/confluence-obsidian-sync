@@ -51,6 +51,80 @@ function expectFolderNode(
 }
 
 describe("fetchConfluencePageTree", () => {
+  it("returns authentication failure for root page HTTP 401", async () => {
+    const { transport } = createSequencedTransport([{ status: 401, json: {} }]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "authentication-failed",
+      message: "인증에 실패했습니다. Atlassian 이메일과 API token을 확인하세요."
+    });
+  });
+
+  it("returns rate limit failure for descendants HTTP 429", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "100",
+          title: "Root",
+          version: { number: 1 },
+          body: { storage: { value: "<p>Root</p>" } },
+          _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
+        }
+      },
+      { status: 429, json: {} }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "rate-limited",
+      message: "Confluence API rate limit에 도달했습니다. 잠시 후 다시 시도하세요. HTTP 429"
+    });
+  });
+
+  it("collects permission denied page detail failures without aborting the whole pull", async () => {
+    const { transport } = createSequencedTransport([
+      {
+        status: 200,
+        json: {
+          id: "100",
+          title: "Root",
+          version: { number: 1 },
+          body: { storage: { value: "<p>Root</p>" } },
+          _links: { webui: "/wiki/spaces/SPACE/pages/100/Root" }
+        }
+      },
+      {
+        status: 200,
+        json: {
+          results: [{ id: "200", title: "Private Child", type: "page", parentId: "100", depth: 1, childPosition: 0 }],
+          _links: {}
+        }
+      },
+      { status: 403, json: {} }
+    ]);
+
+    const result = await fetchConfluencePageTree(createSettings(), "100", transport);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+    expect(result.errors).toEqual([
+      {
+        pageId: "200",
+        title: "Private Child",
+        reason: "permission-denied",
+        message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
+      }
+    ]);
+  });
+
   it("returns a root-only tree when the page has no descendants", async () => {
     const { requests, transport } = createSequencedTransport([
       {
@@ -338,7 +412,7 @@ describe("fetchConfluencePageTree", () => {
         pageId: "300",
         title: "Forbidden",
         reason: "permission-denied",
-        message: "Confluence 페이지 트리에 접근할 권한이 없습니다."
+        message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
       }
     ]);
   });
@@ -1158,7 +1232,7 @@ describe("fetchConfluencePageTree", () => {
         pageId: "page-200",
         title: "Forbidden",
         reason: "permission-denied",
-        message: "Confluence 페이지 트리에 접근할 권한이 없습니다."
+        message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
       }
     ]);
   });
@@ -1217,7 +1291,7 @@ describe("fetchConfluencePageTree", () => {
         pageId: "page-200",
         title: "Forbidden Parent",
         reason: "permission-denied",
-        message: "Confluence 페이지 트리에 접근할 권한이 없습니다."
+        message: "Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
       },
       {
         pageId: "folder-300",

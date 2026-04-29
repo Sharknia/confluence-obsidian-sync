@@ -1,16 +1,14 @@
 import type { RequestUrlParam } from "obsidian";
+import {
+  classifyConfluenceHttpFailure,
+  createConfluenceNetworkFailure,
+  type ConfluenceApiFailureReason
+} from "./apiFailure";
 import { buildBasicAuthorizationHeader, buildConfluenceApiUrl } from "./authentication";
 import type { ConfluenceRequestResult, ConfluenceRequestTransport } from "./requestTransport";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 
-export type ConfluencePagePushFailureReason =
-  | "authentication-failed"
-  | "permission-denied"
-  | "not-found"
-  | "network-error"
-  | "version-conflict"
-  | "invalid-response"
-  | "api-error";
+export type ConfluencePagePushFailureReason = ConfluenceApiFailureReason;
 
 export interface ConfluencePageForPush {
   pageId: string;
@@ -138,40 +136,21 @@ function buildFailure(
   return { ok: false, reason, message };
 }
 
-function classifyHttpFailure(status: number): ConfluencePagePushFailure {
-  if (status === 401) {
-    return buildFailure("authentication-failed", "인증에 실패했습니다. Atlassian 이메일과 API token을 확인하세요.");
-  }
+function classifyPageUpdateHttpFailure(status: number): ConfluencePagePushFailure {
+  const failure = classifyConfluenceHttpFailure(status, {
+    permissionDeniedMessage: "Confluence 페이지를 수정할 권한이 없습니다.",
+    notFoundMessage: "Confluence 페이지를 찾을 수 없습니다."
+  });
 
-  if (status === 403) {
-    return buildFailure("permission-denied", "Confluence 페이지를 수정할 권한이 없습니다.");
-  }
-
-  if (status === 404) {
-    return buildFailure("not-found", "Confluence 페이지를 찾을 수 없습니다.");
-  }
-
-  if (status === 409) {
-    return buildFailure("version-conflict", "Confluence 페이지 version이 충돌했습니다. Pull Tree 후 다시 시도하세요.");
-  }
-
-  return buildFailure("api-error", `Confluence API 오류가 발생했습니다. HTTP ${status}`);
+  return buildFailure(failure.reason, failure.message);
 }
 
 function classifyPageReadHttpFailure(status: number): ConfluencePagePushFailure {
-  if (status === 401) {
-    return buildFailure("authentication-failed", "인증에 실패했습니다. Atlassian 이메일과 API token을 확인하세요.");
-  }
+  const failure = classifyConfluenceHttpFailure(status, {
+    notFoundMessage: "Confluence 페이지를 찾을 수 없습니다."
+  });
 
-  if (status === 403) {
-    return buildFailure("permission-denied", "Confluence 페이지에 접근할 권한이 없습니다.");
-  }
-
-  if (status === 404) {
-    return buildFailure("not-found", "Confluence 페이지를 찾을 수 없습니다.");
-  }
-
-  return buildFailure("api-error", `Confluence API 오류가 발생했습니다. HTTP ${status}`);
+  return buildFailure(failure.reason, failure.message);
 }
 
 async function requestConfluence(
@@ -182,7 +161,9 @@ async function requestConfluence(
   try {
     return await transport(request);
   } catch {
-    return buildFailure("network-error", networkErrorMessage);
+    const failure = createConfluenceNetworkFailure(networkErrorMessage);
+
+    return buildFailure(failure.reason, failure.message);
   }
 }
 
@@ -302,7 +283,7 @@ export async function fetchConfluencePageForPush(
   }
 
   if (response.status !== 200) {
-    return classifyHttpFailure(response.status);
+    return classifyPageUpdateHttpFailure(response.status);
   }
 
   return parsePageForPushResponse(response.json);
@@ -346,7 +327,7 @@ export async function updateConfluencePageBody(
   }
 
   if (response.status !== 200) {
-    return classifyHttpFailure(response.status);
+    return classifyPageUpdateHttpFailure(response.status);
   }
 
   const parsedUpdateResponse = parsePageForPushResponse(response.json);

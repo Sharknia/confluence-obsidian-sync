@@ -37,6 +37,7 @@ export interface RunPushCurrentPageCommandInput {
   getActiveMarkdownFile: () => ActiveMarkdownFile | null;
   fetchPage?: PushPageFetcher;
   updatePage?: PushPageUpdater;
+  confirmPush?: (message: string) => boolean;
   showNotice: (message: string) => void;
 }
 
@@ -58,6 +59,7 @@ export async function runPushCurrentPageCommand({
   getActiveMarkdownFile,
   fetchPage = defaultPushPageFetcher,
   updatePage = defaultPushPageUpdater,
+  confirmPush,
   showNotice,
 }: RunPushCurrentPageCommandInput): Promise<void> {
   const missingFields = getMissingConfluenceConnectionFields(settings);
@@ -113,6 +115,11 @@ export async function runPushCurrentPageCommand({
     return;
   }
 
+  if (metadata.contentHash !== null && calculateMarkdownBodyHash(metadata.bodyMarkdown) === metadata.contentHash) {
+    showNotice("Push할 변경사항이 없습니다. 로컬 본문이 마지막 동기화 상태와 같습니다.");
+    return;
+  }
+
   const conversionResult = convertMarkdownToConfluenceStorage(metadata.bodyMarkdown);
 
   if (!conversionResult.ok) {
@@ -120,10 +127,30 @@ export async function runPushCurrentPageCommand({
     return;
   }
 
+  const nextVersionNumber = remotePageResult.page.versionNumber + 1;
+  const shouldContinue =
+    confirmPush?.(
+      [
+        "현재 Markdown 문서를 Confluence 페이지에 업로드합니다.",
+        "",
+        `pageId: ${metadata.pageId}`,
+        `제목: ${remotePageResult.page.title}`,
+        `현재 version: ${remotePageResult.page.versionNumber}`,
+        `업로드 후 version: ${nextVersionNumber}`,
+        "",
+        "계속하시겠습니까?",
+      ].join("\n"),
+    ) ?? true;
+
+  if (!shouldContinue) {
+    showNotice("Push를 취소했습니다.");
+    return;
+  }
+
   const updateResult = await updatePage(settings, {
     pageId: metadata.pageId,
     title: remotePageResult.page.title,
-    nextVersionNumber: remotePageResult.page.versionNumber + 1,
+    nextVersionNumber,
     bodyStorageValue: conversionResult.storageValue,
   });
 

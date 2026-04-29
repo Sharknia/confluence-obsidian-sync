@@ -32,6 +32,7 @@
   min-height: 96px;
   padding: 14px 16px;
   text-align: left;
+  white-space: normal;
   width: 100%;
   word-break: keep-all;
 }
@@ -50,7 +51,9 @@
 .confluence-sync-panel-action-text {
   display: grid;
   gap: 6px;
+  max-width: 100%;
   min-width: 0;
+  white-space: normal;
 }
 
 .confluence-sync-panel-action-text strong {
@@ -64,5 +67,7 @@
   color: var(--text-muted);
   font-size: var(--font-ui-small);
   line-height: 1.55;
+  max-width: 100%;
   overflow-wrap: anywhere;
+  white-space: normal;
 }

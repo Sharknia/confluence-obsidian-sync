@@ -45,10 +45,51 @@ describe("pullReport", () => {
       unchangedCount: 70,
       fetchFailureCount: 4,
       conversionWarningCount: 5,
+      conversionFailureCount: 0,
+      fetchFailureLines: [],
+      conversionIssueLines: [],
       safeDeleteLines: [
         "- [[confluence/기획 문서/Old.md]] -> [[confluence/기획 문서/.confluence-sync/trash/2026/Old.md]]"
       ],
       skippedLocalChangeLines: ["- [[confluence/기획 문서/Draft.md]] pageId=200 reason=local-change"]
+    });
+  });
+
+  it("parses detailed recent issue lines", () => {
+    const summary = parsePullReportMarkdown(`# Pull Report
+
+- 실행 시각: 2026-04-29T10:11:12.000Z
+- 추가: 1개
+- 갱신: 0개
+- 안전 삭제: 0개
+- 로컬 수정 스킵: 0개
+- 변경 없음: 0개
+- 조회 실패: 1개
+- 변환 경고: 1개
+- 변환 실패: 1개
+
+## 추가
+- [[confluence/Root/Root.md]] pageId=100
+
+## 조회 실패 상세
+- pageId=200 title="Private Child" reason=permission-denied message="Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."
+
+## 변환 문제 상세
+- pageId=100 title="Root" severity=warning message="지원하지 않는 Confluence macro가 Markdown 경고로 변환됐습니다: toc"
+- pageId=300 title="Broken" severity=error message="Confluence storage를 Markdown으로 변환할 수 없습니다: parse failed"
+`);
+
+    expect(summary).toMatchObject({
+      fetchFailureCount: 1,
+      conversionWarningCount: 1,
+      conversionFailureCount: 1,
+      fetchFailureLines: [
+        '- pageId=200 title="Private Child" reason=permission-denied message="Confluence 페이지에 접근할 권한이 없습니다. 페이지 권한을 확인하세요."'
+      ],
+      conversionIssueLines: [
+        '- pageId=100 title="Root" severity=warning message="지원하지 않는 Confluence macro가 Markdown 경고로 변환됐습니다: toc"',
+        '- pageId=300 title="Broken" severity=error message="Confluence storage를 Markdown으로 변환할 수 없습니다: parse failed"'
+      ]
     });
   });
 

@@ -62,14 +62,14 @@ describe("buildPageMarkdownFiles", () => {
     const rootPage = createPage({ pageId: "100", title: "Root" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files).toEqual([
+    expect(result.files).toEqual([
       {
         pageId: "100",
         title: "Root",
@@ -94,14 +94,14 @@ Hello
     const rootPage = createPage({ pageId: "100", title: "Root", bodyStorageValue: "<p>Hello</p>" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files[0]?.content).toContain(`confluenceContentHash: "${calculateMarkdownBodyHash("Hello\n")}"`);
+    expect(result.files[0]?.content).toContain(`confluenceContentHash: "${calculateMarkdownBodyHash("Hello\n")}"`);
   });
 
   it("parses flat Confluence frontmatter metadata and markdown body", () => {
@@ -171,14 +171,14 @@ Nested legacy body
       ],
     };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage, childA, childB],
       pathExists: (path) => Promise.resolve(path === "confluence/Root/Same.md"),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Root.md",
       "confluence/Root/Root/Same.md",
       "confluence/Root/Root/Same (1).md",
@@ -201,14 +201,14 @@ Nested legacy body
       ],
     };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [childA, childB],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Root.md",
       "confluence/Root/root (1).md",
     ]);
@@ -218,7 +218,7 @@ Nested legacy body
     const rootPage = createPage({ pageId: "100", title: "Root" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
@@ -233,14 +233,14 @@ Old content
 `),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
+    expect(result.files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
   });
 
   it("adds a suffix when an existing Markdown file belongs to a different Confluence page", async () => {
     const rootPage = createPage({ pageId: "100", title: "Root" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
@@ -255,14 +255,14 @@ Other content
 `),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root (1).md"]);
+    expect(result.files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root (1).md"]);
   });
 
   it("reuses an existing Markdown file with flat Confluence properties", async () => {
     const rootPage = createPage({ pageId: "100", title: "Root" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
@@ -276,7 +276,7 @@ Old content
 `),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
+    expect(result.files.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.md"]);
   });
 
   it("collects page nodes from a folder root tree", async () => {
@@ -291,14 +291,14 @@ Old content
       children: [{ ...childPage, children: [] }],
     };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Folder Root",
       root,
       pages: [childPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual(["confluence/Folder Root/Child.md"]);
+    expect(result.files.map((file) => file.vaultPath)).toEqual(["confluence/Folder Root/Child.md"]);
   });
 
   it("creates nested folder paths that preserve the Confluence page tree", async () => {
@@ -310,14 +310,14 @@ Old content
       children: [{ ...childPage, children: [{ ...grandchildPage, children: [] }] }],
     };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [parentPage, childPage, grandchildPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Parent.md",
       "confluence/Root/Parent/Child.md",
       "confluence/Root/Parent/Child/Grandchild.md",
@@ -332,7 +332,7 @@ Old content
       children: [{ ...childPage, children: [] }],
     };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [parentPage, childPage],
@@ -346,7 +346,7 @@ Other content
 `),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Parent (1).md",
       "confluence/Root/Parent (1)/Child.md",
     ]);
@@ -358,15 +358,15 @@ Other content
     const missingSecond = createPage({ pageId: "300", title: "Missing Second", depth: 1, childPosition: 1 });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage, missingFirst, missingSecond],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.pageId)).toEqual(["100", "200", "300"]);
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.pageId)).toEqual(["100", "200", "300"]);
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Root.md",
       "confluence/Root/Missing First.md",
       "confluence/Root/Missing Second.md",
@@ -395,15 +395,15 @@ Other content
     });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [{ ...linkedPage, children: [] }] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage, linkedPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files[0]?.content).toContain("[[confluence/Root/Root/Team API Sync|API Sync]]");
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files[0]?.content).toContain("[[confluence/Root/Root/Team API Sync|API Sync]]");
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Root.md",
       "confluence/Root/Root/Team API Sync.md",
     ]);
@@ -431,7 +431,7 @@ Other content
     });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [{ ...childPage, children: [] }] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage, childPage],
@@ -442,11 +442,11 @@ Other content
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.vaultPath)).toEqual([
+    expect(result.files.map((file) => file.vaultPath)).toEqual([
       "confluence/Root/Old Root.md",
       "confluence/Root/Old Root/Old Child.md",
     ]);
-    expect(files[0]?.content).toContain("[[confluence/Root/Old Root/Old Child|Child Page]]");
+    expect(result.files[0]?.content).toContain("[[confluence/Root/Old Root/Old Child|Child Page]]");
   });
 
   it("uses the Confluence source host when converting Jira issue macros", async () => {
@@ -465,15 +465,15 @@ Other content
     });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [rootPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files[0]?.content).toContain("관련 이슈: [IS-1251](https://selta.atlassian.net/browse/IS-1251)");
-    expect(files[0]?.warnings).toEqual([]);
+    expect(result.files[0]?.content).toContain("관련 이슈: [IS-1251](https://selta.atlassian.net/browse/IS-1251)");
+    expect(result.files[0]?.warnings).toEqual([]);
   });
 
   it("does not loop forever when the provided tree contains a page cycle", async () => {
@@ -481,14 +481,81 @@ Other content
     const root = { ...cyclicPage, children: [] } as ConfluencePageTreeNode;
     root.children.push(root);
 
-    const files = await buildPageMarkdownFiles({
+    const result = await buildPageMarkdownFiles({
       projectRootPath: "confluence/Root",
       root,
       pages: [cyclicPage],
       pathExists: () => Promise.resolve(false),
     });
 
-    expect(files.map((file) => file.pageId)).toEqual(["100"]);
+    expect(result.files.map((file) => file.pageId)).toEqual(["100"]);
+  });
+
+  it("returns conversion warning issues for unsupported macros", async () => {
+    const page = createPage({
+      pageId: "100",
+      title: "Root",
+      bodyStorageValue: '<ac:structured-macro ac:name="toc" />',
+    });
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root: { ...page, children: [] },
+      pages: [page],
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.files).toHaveLength(1);
+    expect(result.conversionIssues).toEqual([
+      {
+        severity: "warning",
+        pageId: "100",
+        title: "Root",
+        message: "지원하지 않는 Confluence macro가 Markdown 경고로 변환됐습니다: toc",
+      },
+    ]);
+  });
+
+  it("continues other pages when one page conversion fails", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "Root",
+      bodyStorageValue: "<p>Root</p>",
+    });
+    const childPage = createPage({
+      pageId: "200",
+      title: "Broken",
+      parentId: "100",
+      versionNumber: 1,
+      bodyStorageValue: "<p>Broken</p>",
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/200/Broken",
+      depth: 1,
+      childPosition: 0,
+    });
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root: { ...rootPage, children: [{ ...childPage, children: [] }] },
+      pages: [rootPage, childPage],
+      pathExists: () => Promise.resolve(false),
+      convertStorageToMarkdown: (storageValue) => {
+        if (storageValue.includes("Broken")) {
+          throw new Error("parse failed");
+        }
+
+        return { markdown: "Root", warnings: [] };
+      },
+    });
+
+    expect(result.files.map((file) => file.pageId)).toEqual(["100"]);
+    expect(result.conversionIssues).toEqual([
+      {
+        severity: "error",
+        pageId: "200",
+        title: "Broken",
+        message: "Confluence storage를 Markdown으로 변환할 수 없습니다: parse failed",
+      },
+    ]);
   });
 });
 

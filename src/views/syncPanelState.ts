@@ -82,7 +82,12 @@ async function buildProjectState(
       ...baseState,
       lastPullText: reportSummary.pulledAt,
       recentIssueText: buildRecentIssueText(reportSummary),
-      recentIssueLines: [...reportSummary.skippedLocalChangeLines, ...reportSummary.safeDeleteLines].slice(0, 5)
+      recentIssueLines: [
+        ...reportSummary.fetchFailureLines,
+        ...reportSummary.conversionIssueLines,
+        ...reportSummary.skippedLocalChangeLines,
+        ...reportSummary.safeDeleteLines
+      ].slice(0, 5)
     };
   } catch {
     return {
@@ -111,6 +116,10 @@ function buildRecentIssueText(reportSummary: PullReportSummary): string {
 
   if (reportSummary.conversionWarningCount > 0) {
     issueParts.push(`변환 경고 ${reportSummary.conversionWarningCount}개`);
+  }
+
+  if (reportSummary.conversionFailureCount > 0) {
+    issueParts.push(`변환 실패 ${reportSummary.conversionFailureCount}개`);
   }
 
   return issueParts.length === 0 ? "최근 오류 없음" : issueParts.join(", ");

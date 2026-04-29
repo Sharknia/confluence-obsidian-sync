@@ -46,6 +46,20 @@ export interface PageMarkdownFile {
   warnings: ConfluenceStorageToMarkdownWarning[];
 }
 
+export interface PageMarkdownConversionIssue {
+  severity: "warning" | "error";
+  pageId: string;
+  title: string;
+  message: string;
+}
+
+export interface BuildPageMarkdownFilesResult {
+  files: PageMarkdownFile[];
+  conversionIssues: PageMarkdownConversionIssue[];
+}
+
+export type StorageToMarkdownConverter = typeof convertConfluenceStorageToMarkdown;
+
 export interface ParsedPageMarkdownMetadata {
   pageId: string;
   versionNumber: number | null;
@@ -60,6 +74,7 @@ export interface BuildPageMarkdownFilesInput {
   existingPagePathById?: ReadonlyMap<string, string>;
   pathExists: (path: string) => Promise<boolean>;
   readExistingFile?: (path: string) => Promise<string>;
+  convertStorageToMarkdown?: StorageToMarkdownConverter;
 }
 
 export interface UpdatePageMarkdownFrontmatterAfterPushInput {
@@ -177,8 +192,10 @@ function removeFrontmatterBodySeparator(markdownBody: string): string {
   return markdownBody.startsWith("\n") ? markdownBody.slice(1) : markdownBody;
 }
 
-export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput): Promise<PageMarkdownFile[]> {
+export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput): Promise<BuildPageMarkdownFilesResult> {
   const files: PageMarkdownFile[] = [];
+  const conversionIssues: PageMarkdownConversionIssue[] = [];
+  const convertStorageToMarkdown = input.convertStorageToMarkdown ?? convertConfluenceStorageToMarkdown;
   const pagesById = new Map(input.pages.map((page) => [page.pageId, page]));
   const pathAssignments = new Map<string, string>();
   const reservedFilePathKeys = new Set<string>();
@@ -216,10 +233,34 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
       continue;
     }
 
-    const markdownConversion = convertConfluenceStorageToMarkdown(page.bodyStorageValue, {
-      resolvePageLinkTarget: (contentTitle) => linkTargetsByTitle.get(contentTitle) ?? contentTitle,
-      resolveJiraIssueUrl: (issueKey) => createJiraIssueUrl(page.sourceUrl, issueKey),
-    });
+    let markdownConversion: ReturnType<StorageToMarkdownConverter>;
+
+    try {
+      markdownConversion = convertStorageToMarkdown(page.bodyStorageValue, {
+        resolvePageLinkTarget: (contentTitle) => linkTargetsByTitle.get(contentTitle) ?? contentTitle,
+        resolveJiraIssueUrl: (issueKey) => createJiraIssueUrl(page.sourceUrl, issueKey),
+      });
+    } catch (error) {
+      const detail = error instanceof Error && error.message.length > 0 ? error.message : "알 수 없는 변환 오류";
+
+      conversionIssues.push({
+        severity: "error",
+        pageId: page.pageId,
+        title: page.title,
+        message: `Confluence storage를 Markdown으로 변환할 수 없습니다: ${detail}`,
+      });
+      continue;
+    }
+
+    conversionIssues.push(
+      ...markdownConversion.warnings.map((warning) => ({
+        severity: "warning" as const,
+        pageId: page.pageId,
+        title: page.title,
+        message: toConversionWarningMessage(warning),
+      })),
+    );
+
     const markdownBody = `${markdownConversion.markdown}\n`;
 
     files.push({
@@ -238,7 +279,15 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
     });
   }
 
-  return files;
+  return { files, conversionIssues };
+}
+
+function toConversionWarningMessage(warning: ConfluenceStorageToMarkdownWarning): string {
+  if (warning.type === "unsupported-macro") {
+    return `지원하지 않는 Confluence macro가 Markdown 경고로 변환됐습니다: ${warning.name}`;
+  }
+
+  return "Confluence storage 일부가 Markdown 경고로 변환됐습니다.";
 }
 
 interface PagePlacementWithPage {

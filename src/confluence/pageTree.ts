@@ -1,23 +1,16 @@
+import {
+  classifyConfluenceHttpFailure,
+  createConfluenceNetworkFailure,
+  type ConfluenceApiFailureReason
+} from "./apiFailure";
 import { buildBasicAuthorizationHeader, buildConfluenceApiUrl, getConfluenceApiBaseUrl } from "./authentication";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 import type { ConfluenceRequestResult, ConfluenceRequestTransport } from "./requestTransport";
 import type { RequestUrlParam } from "obsidian";
 
-export type ConfluencePageTreeFailureReason =
-  | "authentication-failed"
-  | "permission-denied"
-  | "not-found"
-  | "network-error"
-  | "invalid-response"
-  | "api-error";
+export type ConfluencePageTreeFailureReason = ConfluenceApiFailureReason;
 
-export type ConfluencePageTreePageErrorReason =
-  | "authentication-failed"
-  | "permission-denied"
-  | "not-found"
-  | "network-error"
-  | "invalid-response"
-  | "api-error";
+export type ConfluencePageTreePageErrorReason = ConfluenceApiFailureReason;
 
 export interface ConfluencePageTreePage {
   pageId: string;
@@ -188,10 +181,6 @@ function createConfluenceGetRequest(settings: ConfluenceSyncSettings, apiPath: s
   };
 }
 
-function buildApiErrorMessage(status: number): string {
-  return `Confluence API 오류가 발생했습니다. HTTP ${status}`;
-}
-
 function buildFailure(reason: ConfluencePageTreeFailureReason, message: string): ConfluencePageTreeFailure {
   return { ok: false, reason, message };
 }
@@ -214,61 +203,23 @@ function isPageTreeFailure(value: unknown): value is ConfluencePageTreeFailure {
 }
 
 function classifyHttpFailure(status: number): ConfluencePageTreeFailure {
-  if (status === 401) {
-    return buildFailure(
-      "authentication-failed",
-      "인증에 실패했습니다. Atlassian 이메일과 API token을 확인하세요."
-    );
-  }
+  const failure = classifyConfluenceHttpFailure(status);
 
-  if (status === 403) {
-    return buildFailure("permission-denied", "페이지 트리에 접근할 권한이 없습니다.");
-  }
-
-  if (status === 404) {
-    return buildFailure("not-found", "페이지를 찾을 수 없습니다. URL과 접근 권한을 확인하세요.");
-  }
-
-  return buildFailure("api-error", buildApiErrorMessage(status));
+  return buildFailure(failure.reason, failure.message);
 }
 
 function classifyRootPageHttpFailure(status: number): ConfluencePageTreeFailure {
-  if (status === 404) {
-    return buildFailure("not-found", "Confluence 루트 페이지를 찾을 수 없습니다.");
-  }
+  const failure = classifyConfluenceHttpFailure(status, {
+    notFoundMessage: "Confluence 루트 페이지를 찾을 수 없습니다."
+  });
 
-  return classifyHttpFailure(status);
+  return buildFailure(failure.reason, failure.message);
 }
 
 function classifyDescendantPageHttpError(summary: DescendantPageSummary, status: number): ConfluencePageTreeError {
-  if (status === 401) {
-    return buildPageTreeError(
-      summary.id,
-      summary.title,
-      "authentication-failed",
-      "인증에 실패했습니다. Atlassian 이메일과 API token을 확인하세요."
-    );
-  }
+  const failure = classifyConfluenceHttpFailure(status);
 
-  if (status === 403) {
-    return buildPageTreeError(
-      summary.id,
-      summary.title,
-      "permission-denied",
-      "Confluence 페이지 트리에 접근할 권한이 없습니다."
-    );
-  }
-
-  if (status === 404) {
-    return buildPageTreeError(
-      summary.id,
-      summary.title,
-      "not-found",
-      "Confluence 페이지를 찾을 수 없습니다. URL과 접근 권한을 확인하세요."
-    );
-  }
-
-  return buildPageTreeError(summary.id, summary.title, "api-error", buildApiErrorMessage(status));
+  return buildPageTreeError(summary.id, summary.title, failure.reason, failure.message);
 }
 
 function toDescendantPageRequestError(
@@ -415,7 +366,9 @@ async function requestConfluence(
   try {
     return await transport(request);
   } catch {
-    return buildFailure("network-error", "네트워크 오류로 Confluence 페이지 트리를 조회할 수 없습니다.");
+    const failure = createConfluenceNetworkFailure("네트워크 오류로 Confluence 페이지 트리를 조회할 수 없습니다.");
+
+    return buildFailure(failure.reason, failure.message);
   }
 }
 
