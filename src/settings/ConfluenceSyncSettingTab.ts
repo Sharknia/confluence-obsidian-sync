@@ -68,7 +68,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
       });
     appendApiTokenHelp(containerEl);
 
-    let rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? "";
+    let rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? this.plugin.settings.defaultRootContentUrl;
 
     const currentProjectStatusEl = containerEl.createEl("p", {
       cls: "confluence-sync-current-project-status",

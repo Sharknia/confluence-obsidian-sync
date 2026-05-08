@@ -17,6 +17,7 @@ describe("createSyncPanelViewFactory", () => {
         confluenceBaseUrl: "https://selta.atlassian.net",
         userEmail: "",
         apiToken: "",
+        defaultRootContentUrl: "https://selta.atlassian.net/wiki/spaces/IS/folder/23167000",
         defaultProjectFolder: "confluence",
         safeDeleteFolder: ".confluence-sync/trash",
         graphifyExecutablePath: "",

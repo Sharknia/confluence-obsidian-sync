@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CONFLUENCE_SYNC_SETTINGS,
+  DEFAULT_ROOT_CONTENT_URL,
   loadConfluenceSyncSettings,
   normalizeConfluenceBaseUrl
 } from "./defaultSettings";
@@ -12,6 +13,10 @@ describe("DEFAULT_CONFLUENCE_SYNC_SETTINGS", () => {
 
   it("keeps the default project folder inside the vault", () => {
     expect(DEFAULT_CONFLUENCE_SYNC_SETTINGS.defaultProjectFolder).toBe("confluence");
+  });
+
+  it("uses the IS Confluence folder as the initial root content URL", () => {
+    expect(DEFAULT_CONFLUENCE_SYNC_SETTINGS.defaultRootContentUrl).toBe(DEFAULT_ROOT_CONTENT_URL);
   });
 
   it("keeps the safe delete folder under the sync metadata folder", () => {
@@ -52,6 +57,32 @@ describe("loadConfluenceSyncSettings", () => {
     );
 
     expect(settings.graphifyExecutablePath).toBe("/opt/homebrew/bin/graphify");
+  });
+
+  it("loads a stored default root content URL after trimming whitespace", async () => {
+    const settings = await loadConfluenceSyncSettings(() =>
+      Promise.resolve({
+        defaultRootContentUrl: "  https://selta.atlassian.net/wiki/spaces/IS/folder/23167000  "
+      })
+    );
+
+    expect(settings.defaultRootContentUrl).toBe("https://selta.atlassian.net/wiki/spaces/IS/folder/23167000");
+  });
+
+  it("keeps the default root content URL when stored settings do not include one", async () => {
+    const settings = await loadConfluenceSyncSettings(() => Promise.resolve({}));
+
+    expect(settings.defaultRootContentUrl).toBe(DEFAULT_ROOT_CONTENT_URL);
+  });
+
+  it("normalizes a non-string stored default root content URL to the default URL", async () => {
+    const settings = await loadConfluenceSyncSettings(() =>
+      Promise.resolve({
+        defaultRootContentUrl: 123
+      })
+    );
+
+    expect(settings.defaultRootContentUrl).toBe(DEFAULT_ROOT_CONTENT_URL);
   });
 
   it("normalizes a non-string stored graphify executable path to blank", async () => {

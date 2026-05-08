@@ -15,6 +15,7 @@ export interface ConfluenceSyncSettings {
   confluenceBaseUrl: string;
   userEmail: string;
   apiToken: string;
+  defaultRootContentUrl: string;
   defaultProjectFolder: string;
   safeDeleteFolder: string;
   graphifyExecutablePath: string;
@@ -23,11 +24,13 @@ export interface ConfluenceSyncSettings {
 }
 
 export const DEFAULT_CONFLUENCE_BASE_URL = "https://selta.atlassian.net";
+export const DEFAULT_ROOT_CONTENT_URL = "https://selta.atlassian.net/wiki/spaces/IS/folder/23167000";
 
 export const DEFAULT_CONFLUENCE_SYNC_SETTINGS: ConfluenceSyncSettings = {
   confluenceBaseUrl: DEFAULT_CONFLUENCE_BASE_URL,
   userEmail: "",
   apiToken: "",
+  defaultRootContentUrl: DEFAULT_ROOT_CONTENT_URL,
   defaultProjectFolder: "confluence",
   safeDeleteFolder: ".confluence-sync/trash",
   graphifyExecutablePath: "",
@@ -43,6 +46,7 @@ export async function loadConfluenceSyncSettings(loadStoredSettings: () => Promi
     return {
       ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
       ...storedSettingsRecord,
+      defaultRootContentUrl: normalizeDefaultRootContentUrl(storedSettingsRecord.defaultRootContentUrl),
       graphifyExecutablePath: normalizeOptionalString(storedSettingsRecord.graphifyExecutablePath),
       graphifyTimeoutSeconds: normalizeGraphifyTimeoutSeconds(storedSettingsRecord.graphifyTimeoutSeconds),
       currentProject: normalizeCurrentProjectSettings(storedSettingsRecord.currentProject)
@@ -68,6 +72,16 @@ function isObjectRecord(value: unknown): value is Partial<ConfluenceSyncSettings
 
 function normalizeOptionalString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeDefaultRootContentUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    return DEFAULT_ROOT_CONTENT_URL;
+  }
+
+  const trimmedValue = value.trim();
+
+  return trimmedValue.length > 0 ? trimmedValue : DEFAULT_ROOT_CONTENT_URL;
 }
 
 function normalizeGraphifyTimeoutSeconds(value: unknown): number {
