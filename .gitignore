@@ -14,8 +14,11 @@ coverage/
 /.confluence-sync/credentials.json
 
 # graphify 산출물은 로컬에서 재생성 가능한 분석 결과이므로 Git에 포함하지 않는다.
-/graphify-out/*
-!/graphify-out/.gitkeep
+/graphify-out/
+
+# Obsidian에서 실수로 만든 루트 낙서장은 플러그인 저장소에 포함하지 않는다.
+/무제*.md
+/Untitled*.md
 
 # vault template에는 플러그인 산출물을 복사하지만 Git에는 원본만 보관한다.
 vault-template/.obsidian/plugins/confluence-obsidian-sync/main.js
