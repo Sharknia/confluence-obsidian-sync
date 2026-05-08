@@ -71,3 +71,27 @@
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+.confluence-sync-graphify-output-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.confluence-sync-graphify-output-button {
+  min-height: 32px;
+}
+
+.confluence-sync-graphify-message-copy {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.confluence-sync-graphify-message-copy-source {
+  font-family: var(--font-monospace);
+  min-height: 88px;
+  resize: vertical;
+  width: 100%;
+}

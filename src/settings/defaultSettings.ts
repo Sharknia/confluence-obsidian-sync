@@ -17,6 +17,8 @@ export interface ConfluenceSyncSettings {
   apiToken: string;
   defaultProjectFolder: string;
   safeDeleteFolder: string;
+  graphifyExecutablePath: string;
+  graphifyTimeoutSeconds: number;
   currentProject: CurrentConfluenceProjectSettings | null;
 }
 
@@ -28,6 +30,8 @@ export const DEFAULT_CONFLUENCE_SYNC_SETTINGS: ConfluenceSyncSettings = {
   apiToken: "",
   defaultProjectFolder: "confluence",
   safeDeleteFolder: ".confluence-sync/trash",
+  graphifyExecutablePath: "",
+  graphifyTimeoutSeconds: 600,
   currentProject: null
 };
 
@@ -39,6 +43,8 @@ export async function loadConfluenceSyncSettings(loadStoredSettings: () => Promi
     return {
       ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
       ...storedSettingsRecord,
+      graphifyExecutablePath: normalizeOptionalString(storedSettingsRecord.graphifyExecutablePath),
+      graphifyTimeoutSeconds: normalizeGraphifyTimeoutSeconds(storedSettingsRecord.graphifyTimeoutSeconds),
       currentProject: normalizeCurrentProjectSettings(storedSettingsRecord.currentProject)
     };
   } catch {
@@ -58,6 +64,18 @@ export function normalizeConfluenceBaseUrl(rawBaseUrl: string): string {
 
 function isObjectRecord(value: unknown): value is Partial<ConfluenceSyncSettings> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeOptionalString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeGraphifyTimeoutSeconds(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CONFLUENCE_SYNC_SETTINGS.graphifyTimeoutSeconds;
+  }
+
+  return Math.max(30, Math.min(Math.trunc(value), 3_600));
 }
 
 function normalizeCurrentProjectSettings(rawCurrentProject: unknown): CurrentConfluenceProjectSettings | null {

@@ -17,6 +17,14 @@ describe("DEFAULT_CONFLUENCE_SYNC_SETTINGS", () => {
   it("keeps the safe delete folder under the sync metadata folder", () => {
     expect(DEFAULT_CONFLUENCE_SYNC_SETTINGS.safeDeleteFolder).toBe(".confluence-sync/trash");
   });
+
+  it("keeps graphify executable path blank by default", () => {
+    expect(DEFAULT_CONFLUENCE_SYNC_SETTINGS.graphifyExecutablePath).toBe("");
+  });
+
+  it("uses a ten minute graphify timeout by default", () => {
+    expect(DEFAULT_CONFLUENCE_SYNC_SETTINGS.graphifyTimeoutSeconds).toBe(600);
+  });
 });
 
 describe("normalizeConfluenceBaseUrl", () => {
@@ -34,6 +42,26 @@ describe("loadConfluenceSyncSettings", () => {
     const settings = await loadConfluenceSyncSettings(() => Promise.reject(new Error("Failed to load plugin data")));
 
     expect(settings).toEqual(DEFAULT_CONFLUENCE_SYNC_SETTINGS);
+  });
+
+  it("loads a stored graphify executable path after trimming whitespace", async () => {
+    const settings = await loadConfluenceSyncSettings(() =>
+      Promise.resolve({
+        graphifyExecutablePath: "  /opt/homebrew/bin/graphify  "
+      })
+    );
+
+    expect(settings.graphifyExecutablePath).toBe("/opt/homebrew/bin/graphify");
+  });
+
+  it("normalizes a non-string stored graphify executable path to blank", async () => {
+    const settings = await loadConfluenceSyncSettings(() =>
+      Promise.resolve({
+        graphifyExecutablePath: 123
+      })
+    );
+
+    expect(settings.graphifyExecutablePath).toBe("");
   });
 
   it("migrates a stored page current project without root content fields", async () => {

@@ -1,3 +1,5 @@
+import type { GraphifyOutputFileState } from "../graphify/graphifyCli";
+import type { GraphifyRunMode } from "../graphify/graphifyPanelActions";
 import type { SyncPanelState } from "./syncPanelState";
 
 export interface SyncPanelActions {
@@ -7,6 +9,9 @@ export interface SyncPanelActions {
   onPushCurrentPage: () => void | Promise<void>;
   onOpenRootLink: () => void | Promise<void>;
   onOpenLatestReport: () => void | Promise<void>;
+  onRunGraphify: (runMode: GraphifyRunMode) => void | Promise<void>;
+  onOpenGraphifyOutput: (outputFile: GraphifyOutputFileState) => void | Promise<void>;
+  onCopyGraphifyMessage: (message: string) => void | Promise<void>;
 }
 
 interface SyncPanelProjectAction {
@@ -91,6 +96,8 @@ export function renderSyncPanelContent(
 
   actionSectionEl.append(actionListEl);
   containerEl.append(actionSectionEl);
+
+  appendGraphifySection(containerEl, state, actions);
 }
 
 function createProjectActions(actions: SyncPanelActions): SyncPanelProjectAction[] {
@@ -129,6 +136,110 @@ function appendSection(containerEl: HTMLElement, heading: string): HTMLElement {
   containerEl.append(sectionEl);
 
   return sectionEl;
+}
+
+function appendGraphifySection(containerEl: HTMLElement, state: SyncPanelState, actions: SyncPanelActions): void {
+  if (!state.graphify.visible) {
+    return;
+  }
+
+  const graphifySectionEl = appendSection(containerEl, "Graphify");
+  appendTextElement(graphifySectionEl, "p", state.graphify.message);
+
+  if (state.graphify.runStatus.message.length > 0) {
+    appendGraphifyMessageCopyControl(containerEl, graphifySectionEl, state, actions);
+  }
+
+  if (state.graphify.needsProject) {
+    appendTextElement(graphifySectionEl, "p", "현재 프로젝트를 생성하면 Confluence Markdown 폴더를 graphify로 분석할 수 있습니다.");
+    appendGraphifyOutputButtons(containerEl, graphifySectionEl, state, actions);
+    return;
+  }
+
+  if (!state.graphify.installed) {
+    appendTextElement(
+      graphifySectionEl,
+      "p",
+      "설정에서 graphify 실행 경로를 지정하세요. 예: uv tool install graphifyy 또는 pipx install graphifyy"
+    );
+    appendGraphifyOutputButtons(containerEl, graphifySectionEl, state, actions);
+    return;
+  }
+
+  if (state.graphify.externalCommand.length > 0 && !state.graphify.canRun) {
+    appendButton(
+      graphifySectionEl,
+      "외부 실행 명령 복사",
+      () => actions.onCopyGraphifyMessage(state.graphify.externalCommand),
+      false
+    );
+    appendGraphifyOutputButtons(containerEl, graphifySectionEl, state, actions);
+    return;
+  }
+
+  if (state.hasProject) {
+    appendButton(graphifySectionEl, "지식 그래프 생성", () => actions.onRunGraphify(state.graphify.runMode), !state.graphify.canRun);
+  } else {
+    appendTextElement(graphifySectionEl, "p", "현재 프로젝트를 생성하면 Confluence Markdown 폴더를 graphify로 분석할 수 있습니다.");
+  }
+
+  appendGraphifyOutputButtons(containerEl, graphifySectionEl, state, actions);
+}
+
+function appendGraphifyMessageCopyControl(
+  containerEl: HTMLElement,
+  graphifySectionEl: HTMLElement,
+  state: SyncPanelState,
+  actions: SyncPanelActions
+): void {
+  const message = buildGraphifyCopyMessage(state);
+  const copyControlEl = createElement(containerEl, "div");
+  copyControlEl.className = "confluence-sync-graphify-message-copy";
+
+  const copySourceEl = createElement(containerEl, "textarea");
+  copySourceEl.className = "confluence-sync-graphify-message-copy-source";
+  copySourceEl.readOnly = true;
+  copySourceEl.value = message;
+  copySourceEl.setAttribute("aria-live", "polite");
+  copySourceEl.setAttribute("aria-label", "Graphify 상태 메시지");
+
+  copyControlEl.append(copySourceEl);
+  appendButton(
+    copyControlEl,
+    state.graphify.runStatus.kind === "failure" ? "오류 복사" : "상태 복사",
+    () => actions.onCopyGraphifyMessage(message),
+    false
+  );
+  graphifySectionEl.append(copyControlEl);
+}
+
+function buildGraphifyCopyMessage(state: SyncPanelState): string {
+  return [state.graphify.message, state.graphify.runStatus.message]
+    .map((message) => message.trim())
+    .filter((message) => message.length > 0)
+    .join("\n\n");
+}
+
+function appendGraphifyOutputButtons(
+  containerEl: HTMLElement,
+  graphifySectionEl: HTMLElement,
+  state: SyncPanelState,
+  actions: SyncPanelActions
+): void {
+  const outputListEl = createElement(containerEl, "div");
+  outputListEl.className = "confluence-sync-graphify-output-list";
+
+  for (const outputFile of state.graphify.outputFiles) {
+    const outputButtonEl = appendButton(
+      outputListEl,
+      outputFile.label,
+      () => actions.onOpenGraphifyOutput(outputFile),
+      !outputFile.exists
+    );
+    outputButtonEl.className = "confluence-sync-graphify-output-button";
+  }
+
+  graphifySectionEl.append(outputListEl);
 }
 
 function appendTextElement<K extends keyof HTMLElementTagNameMap>(

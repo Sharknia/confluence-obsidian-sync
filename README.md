@@ -68,6 +68,17 @@ logs/latest.md
 Notice를 놓쳤거나 스킵된 파일의 원인을 확인해야 하면 `logs/latest.md`를 먼저 확인하세요.
 Pull Tree가 끝나면 최신 리포트 파일이 자동으로 열립니다.
 
+## Graphify 선택 연동
+
+Desktop Obsidian에서는 Sync Panel에서 선택 설치된 `graphify` CLI를 실행해 Confluence Markdown 작업 사본을 지식 그래프용 corpus로 분석할 수 있습니다.
+
+- 플러그인은 graphify를 번들하지 않습니다.
+- CLI 설치 예: `uv tool install graphifyy` 또는 `pipx install graphifyy`
+- `graphify install`은 graphify 자체 assistant hook/platform 설정이 필요할 때 별도로 실행합니다. 이 플러그인은 해당 설정을 대신하지 않습니다.
+- 입력 대상은 현재 프로젝트의 `confluence/...` Markdown 산출물 폴더입니다.
+- 결과는 vault 루트의 `graphify-out/GRAPH_REPORT.md`, `graphify-out/graph.json`, `graphify-out/graph.html`에서 확인합니다.
+- Codex, Claude Code 같은 외부 AI 도구는 vault의 Markdown 파일과 graphify 결과 파일을 직접 읽는 방식으로 사용합니다.
+
 ## 개발
 
 ```bash

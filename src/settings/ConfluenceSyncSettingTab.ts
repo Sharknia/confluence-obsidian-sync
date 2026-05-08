@@ -5,6 +5,7 @@ import { createProjectFromRootUrl } from "../projects/createProjectFromRootUrl";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type ConfluenceObsidianSyncPlugin from "../main";
 import { normalizeConfluenceBaseUrl } from "./defaultSettings";
+import { appendGraphifySettingsSection } from "./graphifySettingsSection";
 import { ATLASSIAN_API_TOKEN_URL, SYNC_PANEL_OPEN_GUIDE_TEXT } from "./settingsHelpContent";
 
 export class ConfluenceSyncSettingTab extends PluginSettingTab {
@@ -195,6 +196,13 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    appendGraphifySettingsSection({
+      containerEl,
+      SettingClass: Setting,
+      settings: this.plugin.settings,
+      saveSettings: () => this.plugin.saveSettings()
+    });
   }
 
   private buildCurrentProjectStatusText(): string {

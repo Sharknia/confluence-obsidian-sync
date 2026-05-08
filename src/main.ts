@@ -1,4 +1,4 @@
-import { Notice, Plugin, type TFile } from "obsidian";
+import { FileSystemAdapter, Notice, Platform, Plugin, type TFile } from "obsidian";
 import {
   FORCE_PULL_TREE_COMMAND_ID,
   OPEN_SYNC_PANEL_COMMAND_ID,
@@ -9,6 +9,21 @@ import {
 import { runPullCurrentPageCommand } from "./commands/pullCurrentPageCommand";
 import { runPullTreeCommand } from "./commands/pullTreeCommand";
 import { runPushCurrentPageCommand } from "./commands/pushCurrentPageCommand";
+import {
+  resolveGraphifyExecutable,
+  type GraphifyAvailability,
+  type GraphifyOutputFileState,
+  type GraphifyRunStatus
+} from "./graphify/graphifyCli";
+import type { GraphifyRunMode } from "./graphify/graphifyPanelActions";
+import {
+  createNodeExecutableRunner,
+  getDesktopRequire,
+  pathToFileUrl,
+  resolveVaultAbsolutePath,
+  type DesktopRequire
+} from "./graphify/graphifyDesktopRuntime";
+import { createGraphifyObsidianBridge } from "./graphify/graphifyObsidianBridge";
 import { buildPullReportPath } from "./projects/pullReport";
 import type { ProjectStorageAdapter } from "./projects/projectStorage";
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
@@ -19,34 +34,35 @@ import {
 } from "./settings/defaultSettings";
 import { chooseSyncPanelLeaf } from "./views/syncPanelIntegration";
 import { registerSyncPanelRibbonIcon } from "./views/syncPanelRibbon";
-import { buildSyncPanelState } from "./views/syncPanelState";
+import { createSyncPanelViewFactory } from "./views/registerSyncPanelView";
 import { SYNC_PANEL_VIEW_TYPE, SyncPanelView } from "./views/syncPanelView";
 import { openVaultMarkdownFileFromObsidian } from "./views/openVaultMarkdownFile";
 
 export default class ConfluenceObsidianSyncPlugin extends Plugin {
   settings: ConfluenceSyncSettings = { ...DEFAULT_CONFLUENCE_SYNC_SETTINGS };
+  private graphifyRunStatus: GraphifyRunStatus = { kind: "idle", message: "" };
+  private graphifyBridge: ReturnType<typeof createGraphifyObsidianBridge> | null = null;
 
   override async onload(): Promise<void> {
     await this.loadSettings();
     this.addSettingTab(new ConfluenceSyncSettingTab(this));
     this.registerView(
       SYNC_PANEL_VIEW_TYPE,
-      (leaf) =>
-        new SyncPanelView(leaf, {
-          loadState: () =>
-            buildSyncPanelState({
-              settings: this.settings,
-              storage: createVaultStorageAdapter(this)
-            }),
-          actions: {
-            onPullTree: () => this.runPullTree(),
-            onForcePullTree: () => this.runForcePullTree(),
-            onPullCurrentPage: () => this.pullCurrentPage(),
-            onPushCurrentPage: () => this.pushCurrentPage(),
-            onOpenRootLink: () => this.openCurrentProjectRootLink(),
-            onOpenLatestReport: () => this.openCurrentProjectLatestReport()
-          }
-        })
+      createSyncPanelViewFactory({
+        getSettings: () => this.settings,
+        getStorage: () => createVaultStorageAdapter(this),
+        getGraphifyProvider: () => this.createGraphifyProvider(),
+        createView: (leaf, dependencies) => new SyncPanelView(leaf, dependencies),
+        onPullTree: () => this.runPullTree(),
+        onForcePullTree: () => this.runForcePullTree(),
+        onPullCurrentPage: () => this.pullCurrentPage(),
+        onPushCurrentPage: () => this.pushCurrentPage(),
+        onOpenRootLink: () => this.openCurrentProjectRootLink(),
+        onOpenLatestReport: () => this.openCurrentProjectLatestReport(),
+        onRunGraphify: (runMode) => this.runGraphifyForCurrentProject(runMode),
+        onOpenGraphifyOutput: (outputFile) => this.openGraphifyOutput(outputFile),
+        onCopyGraphifyMessage: (message) => this.copyGraphifyMessage(message)
+      })
     );
     registerSyncPanelRibbonIcon({
       addRibbonIcon: (icon, title, callback) => this.addRibbonIcon(icon, title, callback),
@@ -214,6 +230,227 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     }
 
     await openVaultMarkdownFile(this, buildPullReportPath(currentProject.localFolderPath));
+  }
+
+  private createGraphifyProvider(): {
+    isDesktop: boolean;
+    getRunStatus: () => GraphifyRunStatus;
+    checkAvailability: (executable: string) => Promise<GraphifyAvailability>;
+    checkAgentRunner: ReturnType<ReturnType<typeof createGraphifyObsidianBridge>["createProvider"]>["checkAgentRunner"];
+  } {
+    return this.createGraphifyBridge().createProvider();
+  }
+
+  private async runGraphifyForCurrentProject(runMode: GraphifyRunMode): Promise<void> {
+    const currentProject = this.settings.currentProject;
+
+    if (currentProject === null) {
+      await this.setGraphifyRunStatus({ kind: "failure", message: "현재 프로젝트가 없어 graphify를 실행할 수 없습니다." });
+      return;
+    }
+
+    const nodeRequire = getDesktopRequire();
+    const runExecutable = createNodeExecutableRunner(nodeRequire);
+
+    if (!Platform.isDesktop || nodeRequire === null || runExecutable === null) {
+      await this.setGraphifyRunStatus({ kind: "failure", message: "graphify 실행은 Desktop Obsidian에서만 지원합니다." });
+      return;
+    }
+
+    const executable = resolveGraphifyExecutable(this.settings.graphifyExecutablePath);
+    await this.createGraphifyBridge().runGraphify({
+      projectFolderPath: currentProject.localFolderPath,
+      executable,
+      timeoutMilliseconds: this.settings.graphifyTimeoutSeconds * 1000,
+      graphifyRunMode: runMode
+    });
+  }
+
+  private async setGraphifyRunStatus(status: GraphifyRunStatus): Promise<void> {
+    this.graphifyRunStatus = status;
+    await this.refreshSyncPanelViews();
+  }
+
+  private async openGraphifyOutput(outputFile: GraphifyOutputFileState): Promise<void> {
+    await this.createGraphifyBridge().openOutput(outputFile);
+  }
+
+  private async copyGraphifyMessage(message: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(message);
+      new Notice("graphify 메시지를 복사했습니다.");
+    } catch {
+      new Notice("graphify 메시지를 복사할 수 없습니다.");
+    }
+  }
+
+  private createGraphifyBridge(): ReturnType<typeof createGraphifyObsidianBridge> {
+    if (this.graphifyBridge !== null) {
+      return this.graphifyBridge;
+    }
+
+    this.graphifyBridge = createGraphifyObsidianBridge({
+      isDesktop: Platform.isDesktop,
+      getRunExecutable: () => createNodeExecutableRunner(getDesktopRequire()),
+      getVaultBasePath: () => this.getVaultBasePath(),
+      projectFolderExists: (path) => createVaultStorageAdapter(this).exists(path),
+      checkExecutable: (executable) => this.checkExecutableAvailable(executable),
+      homeRelativePathExists: (path) => this.homeRelativePathExists(path),
+      homeRelativeFileContains: (path, text) => this.homeRelativeFileContains(path, text),
+      projectRelativePathExists: (path) => createVaultStorageAdapter(this).exists(path),
+      projectRelativeFileContains: (path, text) => this.projectRelativeFileContains(path, text),
+      openMarkdown: (path) => openVaultMarkdownFile(this, path),
+      openVaultPath: (path) => this.app.workspace.openLinkText(path, "", "tab", { active: true }),
+      openExternalUrl: (url, target, features) => window.open(url, target, features) !== null,
+      copyGeneratedOutputToVaultRoot: (projectFolderPath) => this.copyGraphifyOutputToVaultRoot(projectFolderPath),
+      verifyGraphifyOutputFiles: () => this.verifyGraphifyOutputFiles(),
+      writeGraphifyRunLog: (log) => this.writeGraphifyRunLog(log),
+      toFileUrl: (path) => {
+        const nodeRequire = getDesktopRequire();
+
+        if (nodeRequire === null) {
+          throw new Error("Desktop Node 런타임을 사용할 수 없습니다.");
+        }
+
+        return pathToFileUrl(this.resolveVaultPath(path, nodeRequire), nodeRequire);
+      },
+      setStatus: (status) => this.setGraphifyRunStatus(status),
+      getRunStatus: () => this.graphifyRunStatus,
+      showNotice: (message) => new Notice(message),
+      confirmGraphifyAgentRun: (message) => window.confirm(message)
+    });
+
+    return this.graphifyBridge;
+  }
+
+  private getVaultBasePath(): string {
+    const adapter = this.app.vault.adapter;
+
+    if (!(adapter instanceof FileSystemAdapter)) {
+      throw new Error("현재 vault 어댑터에서 로컬 파일 시스템 경로를 확인할 수 없습니다.");
+    }
+
+    return adapter.getBasePath();
+  }
+
+  private resolveVaultPath(vaultRelativePath: string, nodeRequire: DesktopRequire): string {
+    const pathModule = nodeRequire("path") as typeof import("path");
+
+    return resolveVaultAbsolutePath(this.getVaultBasePath(), vaultRelativePath, (basePath, relativePath) =>
+      pathModule.join(basePath, relativePath)
+    );
+  }
+
+  private async copyGraphifyOutputToVaultRoot(projectFolderPath: string): Promise<void> {
+    const storage = createVaultStorageAdapter(this);
+    const outputFileNames = ["GRAPH_REPORT.md", "graph.json", "graph.html"];
+    let copiedCount = 0;
+
+    await storage.mkdir("graphify-out").catch(() => undefined);
+
+    for (const fileName of outputFileNames) {
+      const sourcePath = `${projectFolderPath}/graphify-out/${fileName}`;
+
+      if (!(await storage.exists(sourcePath))) {
+        continue;
+      }
+
+      await storage.write(`graphify-out/${fileName}`, await storage.read(sourcePath));
+      copiedCount += 1;
+    }
+
+    if (copiedCount === 0) {
+      throw new Error("graphify 결과 파일을 찾을 수 없습니다.");
+    }
+  }
+
+  private async writeGraphifyRunLog(log: string): Promise<void> {
+    const storage = createVaultStorageAdapter(this);
+
+    await storage.mkdir("graphify-out").catch(() => undefined);
+    await storage.write("graphify-out/latest-run.log", log);
+  }
+
+  private async verifyGraphifyOutputFiles(): Promise<{ ok: true } | { ok: false; missingFiles: string[] }> {
+    const storage = createVaultStorageAdapter(this);
+    const outputFileNames = ["GRAPH_REPORT.md", "graph.json", "graph.html"];
+    const missingFiles: string[] = [];
+
+    for (const fileName of outputFileNames) {
+      if (!(await storage.exists(`graphify-out/${fileName}`).catch(() => false))) {
+        missingFiles.push(fileName);
+      }
+    }
+
+    return missingFiles.length === 0 ? { ok: true } : { ok: false, missingFiles };
+  }
+
+  private async checkExecutableAvailable(executable: string): Promise<boolean> {
+    const runExecutable = createNodeExecutableRunner(getDesktopRequire());
+
+    if (runExecutable === null) {
+      return false;
+    }
+
+    try {
+      await runExecutable("which", [executable], {
+        cwd: this.getVaultBasePath(),
+        timeoutMilliseconds: 3_000,
+        maxBufferBytes: 1024 * 1024
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async homeRelativePathExists(homeRelativePath: string): Promise<boolean> {
+    const nodeRequire = getDesktopRequire();
+
+    if (nodeRequire === null) {
+      return false;
+    }
+
+    const osModule = nodeRequire("os") as typeof import("os");
+    const pathModule = nodeRequire("path") as typeof import("path");
+    const fsModule = nodeRequire("fs") as typeof import("fs");
+    const targetPath = pathModule.join(osModule.homedir(), homeRelativePath);
+
+    try {
+      await fsModule.promises.access(targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async projectRelativeFileContains(path: string, text: string): Promise<boolean> {
+    const storage = createVaultStorageAdapter(this);
+
+    try {
+      return (await storage.read(path)).includes(text);
+    } catch {
+      return false;
+    }
+  }
+
+  private async homeRelativeFileContains(homeRelativePath: string, text: string): Promise<boolean> {
+    const nodeRequire = getDesktopRequire();
+
+    if (nodeRequire === null) {
+      return false;
+    }
+
+    const osModule = nodeRequire("os") as typeof import("os");
+    const pathModule = nodeRequire("path") as typeof import("path");
+    const fsModule = nodeRequire("fs") as typeof import("fs");
+    const targetPath = pathModule.join(osModule.homedir(), homeRelativePath);
+
+    try {
+      return (await fsModule.promises.readFile(targetPath, "utf8")).includes(text);
+    } catch {
+      return false;
+    }
   }
 }
 
