@@ -18,7 +18,7 @@
 - 이 프로젝트는 Confluence 문서를 Obsidian에서 편집 가능한 로컬 Markdown 작업 사본으로 다루기 위한 무료 Obsidian 플러그인이다.
 - Confluence가 최종 노출 위치이자 기준 시스템이다.
 - 로컬 Markdown은 낙서장, 작업 사본, AI-ready workspace다.
-- 사내 배포는 Git으로 배포되는 Obsidian vault template을 기본 전제로 한다.
+- 배포는 Public GitHub의 순수 플러그인 저장소와 Obsidian vault template 저장소를 분리하는 방식을 기본 전제로 한다.
 - `.env`와 Confluence 산출물 폴더는 Git에 커밋하지 않는다.
 - Pull 결과 상세 기록은 vault 루트의 `logs/latest.md`에 남긴다.
 - Force Pull Tree는 확인창 승인 후 로컬 수정 파일을 원격 본문으로 덮어쓴다.
@@ -40,6 +40,16 @@
 - 위험한 작업은 미리보기와 명시적 사용자 확인을 거친다.
 - Confluence에서 사라진 문서는 즉시 삭제하지 않고 안전 삭제 폴더로 이동한다.
 - Pull 결과 요약 Notice는 휘발성이 있으므로 스킵, 안전 삭제, 조회 실패 원인은 `logs/latest.md`에서 확인하게 한다.
+
+## 배포 저장소 기준
+
+- 순수 플러그인 저장소는 `/Users/crobat/dev/confluence_to_md/confluence-obsidian-sync`이며 원격은 `Sharknia/confluence-obsidian-sync`다.
+- vault template 저장소는 `/Users/crobat/dev/confluence_to_md/confluence-obsidian-vault-template`이며 원격은 `Sharknia/confluence-obsidian-vault-template`다.
+- vault template 저장소 루트는 사용자가 그대로 Obsidian vault로 열 수 있는 구조여야 한다.
+- vault template을 플러그인 저장소의 `vault-template/` 하위 폴더가 중첩된 형태로 배포하지 않는다.
+- 플러그인 산출물, 기본 Obsidian 설정, 시작 문서, `.gitignore`, 예시 설정을 바꿨다면 vault template 저장소도 함께 갱신해야 한다.
+- vault template에는 `.env`, 플러그인 `data.json`, Confluence 산출물, Pull 로그, 인증 정보, 사용자별 프로젝트 상태를 커밋하지 않는다.
+- vault template 갱신 전후에는 해당 폴더에서 `git rev-parse --show-toplevel`로 상위 Git 저장소와 섞이지 않았는지 확인한다.
 
 ## 코드 작성 기준
 
