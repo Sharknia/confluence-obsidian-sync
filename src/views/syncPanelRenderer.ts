@@ -109,14 +109,14 @@ function createProjectActions(actions: SyncPanelActions): SyncPanelProjectAction
       label: "Pull Tree",
       title: "전체 내려받기",
       description: "현재 프로젝트의 Confluence 트리를 로컬 Markdown으로 갱신합니다.",
-      requiresProject: true,
+      requiresProject: false,
       onClick: actions.onPullTree
     },
     {
       label: "Force Pull Tree",
       title: "전체 강제 내려받기",
       description: "로컬 수정본을 백업 없이 원격 본문으로 덮어씁니다.",
-      requiresProject: true,
+      requiresProject: false,
       onClick: actions.onForcePullTree
     },
     {
@@ -340,6 +340,8 @@ async function runProjectAction(
   label: string,
   onClick: () => void | Promise<void>
 ): Promise<void> {
+  const previousDisabledStates = actionButtons.map((button) => button.disabled);
+
   setButtonsDisabled(actionButtons, true);
   buttonEl.setAttribute("aria-busy", "true");
   statusEl.textContent = `${label} 진행 중입니다...`;
@@ -350,7 +352,7 @@ async function runProjectAction(
   } catch {
     statusEl.textContent = `${label} 실패`;
   } finally {
-    setButtonsDisabled(actionButtons, false);
+    restoreButtonsDisabled(actionButtons, previousDisabledStates);
     buttonEl.removeAttribute("aria-busy");
   }
 }
@@ -358,6 +360,12 @@ async function runProjectAction(
 function setButtonsDisabled(buttons: HTMLButtonElement[], disabled: boolean): void {
   for (const button of buttons) {
     button.disabled = disabled;
+  }
+}
+
+function restoreButtonsDisabled(buttons: HTMLButtonElement[], disabledStates: boolean[]): void {
+  for (const [index, button] of buttons.entries()) {
+    button.disabled = disabledStates[index] ?? false;
   }
 }
 

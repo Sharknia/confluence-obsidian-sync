@@ -271,7 +271,7 @@ describe("renderSyncPanelContent", () => {
     expect(containerEl.textContent).toContain("Push Current Page 완료");
   });
 
-  it("disables project actions when no project exists", () => {
+  it("enables project bootstrap pull actions when no project exists", () => {
     const containerEl = createContainer();
 
     renderSyncPanelContent(
@@ -288,14 +288,68 @@ describe("renderSyncPanelContent", () => {
       createActions()
     );
 
-    expect(findActionButton(containerEl, "Pull Tree")?.disabled).toBe(true);
-    expect(findActionButton(containerEl, "Force Pull Tree")?.disabled).toBe(true);
+    expect(findActionButton(containerEl, "Pull Tree")?.disabled).toBe(false);
+    expect(findActionButton(containerEl, "Force Pull Tree")?.disabled).toBe(false);
     expect(findActionButton(containerEl, "Pull Current Page")?.disabled).toBe(true);
     expect(findActionButton(containerEl, "Push Current Page")?.disabled).toBe(true);
     expect(findActionButton(containerEl, "Open Terminal")?.disabled).toBe(false);
     expect(findActionButton(containerEl, "Update Plugin")?.disabled).toBe(false);
     expect(containerEl.textContent).toContain("현재 문서 내려받기");
     expect(containerEl.textContent).toContain("현재 프로젝트 없음");
+  });
+
+  it("restores initially disabled project actions after bootstrap pull finishes", async () => {
+    const containerEl = createContainer();
+    let finishPull: (() => void) | undefined;
+    const actions = createActions({
+      onPullTree: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPull = resolve;
+          })
+      )
+    });
+
+    renderSyncPanelContent(
+      containerEl,
+      createState({
+        hasProject: false,
+        projectName: "현재 프로젝트 없음",
+        localFolderPath: "",
+        rootUrl: "",
+        rootContentLabel: "",
+        latestReportPath: "",
+        canRunProjectActions: false
+      }),
+      actions
+    );
+
+    const pullButton = findActionButton(containerEl, "Pull Tree");
+    const forcePullButton = findActionButton(containerEl, "Force Pull Tree");
+    const pullCurrentButton = findActionButton(containerEl, "Pull Current Page");
+    const pushButton = findActionButton(containerEl, "Push Current Page");
+    const terminalButton = findActionButton(containerEl, "Open Terminal");
+    const updateButton = findActionButton(containerEl, "Update Plugin");
+
+    pullButton?.click();
+
+    expect(actions.onPullTree).toHaveBeenCalledOnce();
+    expect(pullButton?.disabled).toBe(true);
+    expect(forcePullButton?.disabled).toBe(true);
+    expect(pullCurrentButton?.disabled).toBe(true);
+    expect(pushButton?.disabled).toBe(true);
+    expect(terminalButton?.disabled).toBe(true);
+    expect(updateButton?.disabled).toBe(true);
+
+    finishPull?.();
+    await Promise.resolve();
+
+    expect(pullButton?.disabled).toBe(false);
+    expect(forcePullButton?.disabled).toBe(false);
+    expect(pullCurrentButton?.disabled).toBe(true);
+    expect(pushButton?.disabled).toBe(true);
+    expect(terminalButton?.disabled).toBe(false);
+    expect(updateButton?.disabled).toBe(false);
   });
 
   it("renders graphify run button and output buttons on Desktop when installed", () => {

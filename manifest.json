@@ -1,7 +1,7 @@
 {
   "id": "confluence-obsidian-sync",
   "name": "Confluence Obsidian Sync",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "minAppVersion": "1.5.0",
   "description": "Confluence 문서를 Obsidian 로컬 Markdown 작업 사본으로 관리합니다.",
   "author": "Confluence Obsidian Sync",
