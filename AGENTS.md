@@ -48,6 +48,9 @@
 - vault template 저장소 루트는 사용자가 그대로 Obsidian vault로 열 수 있는 구조여야 한다.
 - vault template을 플러그인 저장소의 `vault-template/` 하위 폴더가 중첩된 형태로 배포하지 않는다.
 - 플러그인 산출물, 기본 Obsidian 설정, 시작 문서, `.gitignore`, 예시 설정을 바꿨다면 vault template 저장소도 함께 갱신해야 한다.
+- vault template에 플러그인 산출물을 반영할 때는 반드시 플러그인 저장소에서 `pnpm run prepare:vault`를 먼저 실행한다.
+- `pnpm run prepare:vault`는 `scripts/prepare-vault-template.mjs`를 통해 `dist/main.js`, `dist/manifest.json`, `dist/styles.css`를 `vault-template/.obsidian/plugins/confluence-obsidian-sync/`로 복사한다.
+- 이후 `vault-template/.obsidian/plugins/confluence-obsidian-sync/`의 `main.js`, `manifest.json`, `styles.css`를 별도 vault template 저장소 `/Users/crobat/dev/confluence_to_md/confluence-obsidian-vault-template/.obsidian/plugins/confluence-obsidian-sync/`에 반영한다.
 - vault template에는 `.env`, 플러그인 `data.json`, Confluence 산출물, Pull 로그, 인증 정보, 사용자별 프로젝트 상태를 커밋하지 않는다.
 - vault template 갱신 전후에는 해당 폴더에서 `git rev-parse --show-toplevel`로 상위 Git 저장소와 섞이지 않았는지 확인한다.
 
