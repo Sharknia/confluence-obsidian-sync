@@ -72,6 +72,8 @@ function createActions(overrides: Partial<SyncPanelActions> = {}): SyncPanelActi
     onPushCurrentPage: vi.fn(),
     onOpenRootLink: vi.fn(),
     onOpenLatestReport: vi.fn(),
+    onOpenVaultTerminal: vi.fn(),
+    onUpdatePlugin: vi.fn(),
     onRunGraphify: vi.fn(),
     onOpenGraphifyOutput: vi.fn(),
     onCopyGraphifyMessage: vi.fn(),
@@ -111,7 +113,11 @@ describe("renderSyncPanelContent", () => {
     );
     expect(containerEl.textContent).toContain("현재 문서 올리기");
     expect(containerEl.textContent).toContain("현재 열린 Markdown 파일 1개를 기존 Confluence 페이지에 업로드합니다.");
-    expect(containerEl.querySelectorAll(".confluence-sync-panel-action-card")).toHaveLength(4);
+    expect(containerEl.textContent).toContain("터미널 열기");
+    expect(containerEl.textContent).toContain("현재 vault 루트를 터미널 작업 폴더로 엽니다.");
+    expect(containerEl.textContent).toContain("플러그인 업데이트");
+    expect(containerEl.textContent).toContain("GitHub 최신 릴리스의 플러그인 파일만 교체합니다. 설정은 유지됩니다.");
+    expect(containerEl.querySelectorAll(".confluence-sync-panel-action-card")).toHaveLength(6);
     expect(containerEl.querySelector(".confluence-sync-panel-action-card-danger")).toBeNull();
     expect(containerEl.querySelectorAll(".confluence-sync-panel-action-button")).toHaveLength(0);
     expect(containerEl.querySelectorAll(".confluence-sync-panel-action-label")).toHaveLength(0);
@@ -133,6 +139,10 @@ describe("renderSyncPanelContent", () => {
     await Promise.resolve();
     findActionButton(containerEl, "Push Current Page")?.click();
     await Promise.resolve();
+    findActionButton(containerEl, "Open Terminal")?.click();
+    await Promise.resolve();
+    findActionButton(containerEl, "Update Plugin")?.click();
+    await Promise.resolve();
     const buttons = Array.from(containerEl.querySelectorAll("button"));
     buttons.find((button) => button.textContent === "Open root link")?.click();
     buttons.find((button) => button.textContent === "Open latest report")?.click();
@@ -141,6 +151,8 @@ describe("renderSyncPanelContent", () => {
     expect(actions.onForcePullTree).toHaveBeenCalledOnce();
     expect(actions.onPullCurrentPage).toHaveBeenCalledOnce();
     expect(actions.onPushCurrentPage).toHaveBeenCalledOnce();
+    expect(actions.onOpenVaultTerminal).toHaveBeenCalledOnce();
+    expect(actions.onUpdatePlugin).toHaveBeenCalledOnce();
     expect(actions.onOpenRootLink).toHaveBeenCalledOnce();
     expect(actions.onOpenLatestReport).toHaveBeenCalledOnce();
   });
@@ -163,21 +175,29 @@ describe("renderSyncPanelContent", () => {
     const forcePullButton = findActionButton(containerEl, "Force Pull Tree");
     const pullCurrentButton = findActionButton(containerEl, "Pull Current Page");
     const pushButton = findActionButton(containerEl, "Push Current Page");
+    const terminalButton = findActionButton(containerEl, "Open Terminal");
+    const updateButton = findActionButton(containerEl, "Update Plugin");
 
     pullButton?.click();
     pullButton?.click();
     forcePullButton?.click();
     pullCurrentButton?.click();
     pushButton?.click();
+    terminalButton?.click();
+    updateButton?.click();
 
     expect(actions.onPullTree).toHaveBeenCalledOnce();
     expect(actions.onForcePullTree).not.toHaveBeenCalled();
     expect(actions.onPullCurrentPage).not.toHaveBeenCalled();
     expect(actions.onPushCurrentPage).not.toHaveBeenCalled();
+    expect(actions.onOpenVaultTerminal).not.toHaveBeenCalled();
+    expect(actions.onUpdatePlugin).not.toHaveBeenCalled();
     expect(pullButton?.disabled).toBe(true);
     expect(forcePullButton?.disabled).toBe(true);
     expect(pullCurrentButton?.disabled).toBe(true);
     expect(pushButton?.disabled).toBe(true);
+    expect(terminalButton?.disabled).toBe(true);
+    expect(updateButton?.disabled).toBe(true);
     expect(pullButton?.getAttribute("aria-busy")).toBe("true");
     expect(containerEl.textContent).toContain("Pull Tree 진행 중입니다...");
 
@@ -188,6 +208,8 @@ describe("renderSyncPanelContent", () => {
     expect(forcePullButton?.disabled).toBe(false);
     expect(pullCurrentButton?.disabled).toBe(false);
     expect(pushButton?.disabled).toBe(false);
+    expect(terminalButton?.disabled).toBe(false);
+    expect(updateButton?.disabled).toBe(false);
     expect(pullButton?.hasAttribute("aria-busy")).toBe(false);
     expect(containerEl.textContent).toContain("Pull Tree 완료");
   });
@@ -210,21 +232,29 @@ describe("renderSyncPanelContent", () => {
     const forcePullButton = findActionButton(containerEl, "Force Pull Tree");
     const pullCurrentButton = findActionButton(containerEl, "Pull Current Page");
     const pushButton = findActionButton(containerEl, "Push Current Page");
+    const terminalButton = findActionButton(containerEl, "Open Terminal");
+    const updateButton = findActionButton(containerEl, "Update Plugin");
 
     pushButton?.click();
     pushButton?.click();
     pullCurrentButton?.click();
     pullButton?.click();
     forcePullButton?.click();
+    terminalButton?.click();
+    updateButton?.click();
 
     expect(actions.onPushCurrentPage).toHaveBeenCalledOnce();
     expect(actions.onPullCurrentPage).not.toHaveBeenCalled();
     expect(actions.onPullTree).not.toHaveBeenCalled();
     expect(actions.onForcePullTree).not.toHaveBeenCalled();
+    expect(actions.onOpenVaultTerminal).not.toHaveBeenCalled();
+    expect(actions.onUpdatePlugin).not.toHaveBeenCalled();
     expect(pullButton?.disabled).toBe(true);
     expect(forcePullButton?.disabled).toBe(true);
     expect(pullCurrentButton?.disabled).toBe(true);
     expect(pushButton?.disabled).toBe(true);
+    expect(terminalButton?.disabled).toBe(true);
+    expect(updateButton?.disabled).toBe(true);
     expect(pushButton?.getAttribute("aria-busy")).toBe("true");
     expect(containerEl.textContent).toContain("Push Current Page 진행 중입니다...");
 
@@ -235,6 +265,8 @@ describe("renderSyncPanelContent", () => {
     expect(forcePullButton?.disabled).toBe(false);
     expect(pullCurrentButton?.disabled).toBe(false);
     expect(pushButton?.disabled).toBe(false);
+    expect(terminalButton?.disabled).toBe(false);
+    expect(updateButton?.disabled).toBe(false);
     expect(pushButton?.hasAttribute("aria-busy")).toBe(false);
     expect(containerEl.textContent).toContain("Push Current Page 완료");
   });
@@ -260,6 +292,8 @@ describe("renderSyncPanelContent", () => {
     expect(findActionButton(containerEl, "Force Pull Tree")?.disabled).toBe(true);
     expect(findActionButton(containerEl, "Pull Current Page")?.disabled).toBe(true);
     expect(findActionButton(containerEl, "Push Current Page")?.disabled).toBe(true);
+    expect(findActionButton(containerEl, "Open Terminal")?.disabled).toBe(false);
+    expect(findActionButton(containerEl, "Update Plugin")?.disabled).toBe(false);
     expect(containerEl.textContent).toContain("현재 문서 내려받기");
     expect(containerEl.textContent).toContain("현재 프로젝트 없음");
   });

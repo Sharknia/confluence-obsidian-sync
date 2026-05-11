@@ -48,6 +48,8 @@ describe("createSyncPanelViewDependencies", () => {
       onPushCurrentPage: vi.fn(),
       onOpenRootLink: vi.fn(),
       onOpenLatestReport: vi.fn(),
+      onOpenVaultTerminal: vi.fn(),
+      onUpdatePlugin: vi.fn(),
       onRunGraphify: vi.fn(),
       onOpenGraphifyOutput: vi.fn(),
       onCopyGraphifyMessage: vi.fn()
@@ -63,6 +65,8 @@ describe("createSyncPanelViewDependencies", () => {
     const onRunGraphify = vi.fn();
     const onOpenGraphifyOutput = vi.fn();
     const onCopyGraphifyMessage = vi.fn();
+    const onOpenVaultTerminal = vi.fn();
+    const onUpdatePlugin = vi.fn();
     const dependencies = createSyncPanelViewDependencies({
       settings: {
         confluenceBaseUrl: "https://selta.atlassian.net",
@@ -89,6 +93,8 @@ describe("createSyncPanelViewDependencies", () => {
       onPushCurrentPage: vi.fn(),
       onOpenRootLink: vi.fn(),
       onOpenLatestReport: vi.fn(),
+      onOpenVaultTerminal,
+      onUpdatePlugin,
       onRunGraphify,
       onOpenGraphifyOutput,
       onCopyGraphifyMessage
@@ -103,9 +109,13 @@ describe("createSyncPanelViewDependencies", () => {
     await dependencies.actions.onRunGraphify({ kind: "cli-code-update" });
     await dependencies.actions.onOpenGraphifyOutput(outputFile);
     await dependencies.actions.onCopyGraphifyMessage("graphify 실행 실패: missing dependency");
+    await dependencies.actions.onOpenVaultTerminal();
+    await dependencies.actions.onUpdatePlugin();
 
     expect(onRunGraphify).toHaveBeenCalledWith({ kind: "cli-code-update" });
     expect(onOpenGraphifyOutput).toHaveBeenCalledWith(outputFile);
     expect(onCopyGraphifyMessage).toHaveBeenCalledWith("graphify 실행 실패: missing dependency");
+    expect(onOpenVaultTerminal).toHaveBeenCalledOnce();
+    expect(onUpdatePlugin).toHaveBeenCalledOnce();
   });
 });

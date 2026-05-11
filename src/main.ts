@@ -1,10 +1,12 @@
-import { FileSystemAdapter, Notice, Platform, Plugin, type TFile } from "obsidian";
+import { FileSystemAdapter, Notice, Platform, Plugin, requestUrl, type TFile } from "obsidian";
 import {
   FORCE_PULL_TREE_COMMAND_ID,
+  OPEN_VAULT_TERMINAL_COMMAND_ID,
   OPEN_SYNC_PANEL_COMMAND_ID,
   PULL_CURRENT_PAGE_COMMAND_ID,
   PULL_TREE_COMMAND_ID,
-  PUSH_CURRENT_PAGE_COMMAND_ID
+  PUSH_CURRENT_PAGE_COMMAND_ID,
+  UPDATE_PLUGIN_COMMAND_ID
 } from "./commands/commandIds";
 import { runPullCurrentPageCommand } from "./commands/pullCurrentPageCommand";
 import { runPullTreeCommand } from "./commands/pullTreeCommand";
@@ -26,6 +28,12 @@ import {
 import { createGraphifyObsidianBridge } from "./graphify/graphifyObsidianBridge";
 import { buildPullReportPath } from "./projects/pullReport";
 import type { ProjectStorageAdapter } from "./projects/projectStorage";
+import {
+  DEFAULT_PLUGIN_ID,
+  DEFAULT_PLUGIN_RELEASE_REPOSITORY,
+  updatePluginFromLatestRelease
+} from "./platform/pluginUpdater";
+import { openVaultTerminal as openVaultTerminalWithRuntime } from "./platform/vaultTerminal";
 import { ConfluenceSyncSettingTab } from "./settings/ConfluenceSyncSettingTab";
 import {
   DEFAULT_CONFLUENCE_SYNC_SETTINGS,
@@ -59,6 +67,8 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
         onPushCurrentPage: () => this.pushCurrentPage(),
         onOpenRootLink: () => this.openCurrentProjectRootLink(),
         onOpenLatestReport: () => this.openCurrentProjectLatestReport(),
+        onOpenVaultTerminal: () => this.openVaultTerminal(),
+        onUpdatePlugin: () => this.updatePluginFromRelease(),
         onRunGraphify: (runMode) => this.runGraphifyForCurrentProject(runMode),
         onOpenGraphifyOutput: (outputFile) => this.openGraphifyOutput(outputFile),
         onCopyGraphifyMessage: (message) => this.copyGraphifyMessage(message)
@@ -117,6 +127,22 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
       name: "Push Current Page",
       callback: () => {
         void this.pushCurrentPage();
+      }
+    });
+
+    this.addCommand({
+      id: OPEN_VAULT_TERMINAL_COMMAND_ID,
+      name: "Open Vault Terminal",
+      callback: () => {
+        void this.openVaultTerminal();
+      }
+    });
+
+    this.addCommand({
+      id: UPDATE_PLUGIN_COMMAND_ID,
+      name: "Update Plugin",
+      callback: () => {
+        void this.updatePluginFromRelease();
       }
     });
   }
@@ -230,6 +256,74 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     }
 
     await openVaultMarkdownFile(this, buildPullReportPath(currentProject.localFolderPath));
+  }
+
+  private async openVaultTerminal(): Promise<void> {
+    const nodeRequire = getDesktopRequire();
+
+    if (!Platform.isDesktop || nodeRequire === null) {
+      new Notice("터미널 열기는 Desktop Obsidian에서만 지원합니다.");
+      return;
+    }
+
+    try {
+      const childProcessModule = loadRequiredDesktopModule<typeof import("child_process")>(nodeRequire, "child_process");
+      const processModule = loadRequiredDesktopModule<typeof import("process")>(nodeRequire, "process");
+
+      await openVaultTerminalWithRuntime({
+        platform: processModule.platform,
+        vaultBasePath: this.getVaultBasePath(),
+        execFile: childProcessModule.execFile
+      });
+      new Notice("vault 루트에서 터미널을 열었습니다.");
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "터미널을 열 수 없습니다.");
+    }
+  }
+
+  private async updatePluginFromRelease(): Promise<void> {
+    const nodeRequire = getDesktopRequire();
+
+    if (!Platform.isDesktop || nodeRequire === null) {
+      new Notice("플러그인 업데이트는 Desktop Obsidian에서만 지원합니다.");
+      return;
+    }
+
+    new Notice("플러그인 업데이트를 확인합니다...");
+
+    try {
+      const fsModule = loadRequiredDesktopModule<typeof import("fs")>(nodeRequire, "fs");
+      const osModule = loadRequiredDesktopModule<typeof import("os")>(nodeRequire, "os");
+      const pathModule = loadRequiredDesktopModule<typeof import("path")>(nodeRequire, "path");
+      const temporaryDirectoryPath = pathModule.join(osModule.tmpdir(), `${DEFAULT_PLUGIN_ID}-update-${Date.now()}`);
+      const pluginDirectoryPath = pathModule.join(this.getVaultBasePath(), ".obsidian", "plugins", DEFAULT_PLUGIN_ID);
+
+      const result = await updatePluginFromLatestRelease({
+        repository: DEFAULT_PLUGIN_RELEASE_REPOSITORY,
+        pluginId: DEFAULT_PLUGIN_ID,
+        pluginDirectoryPath,
+        temporaryDirectoryPath,
+        requestJson: (url) => requestGitHubJson(url),
+        requestArrayBuffer: (url) => requestGitHubArrayBuffer(url),
+        fileSystem: {
+          mkdir: async (path, options) => {
+            await fsModule.promises.mkdir(path, options);
+          },
+          writeFile: async (path, data) => {
+            await fsModule.promises.writeFile(path, data);
+          },
+          copyFile: (fromPath, toPath) => fsModule.promises.copyFile(fromPath, toPath),
+          rm: async (path, options) => {
+            await fsModule.promises.rm(path, options);
+          }
+        },
+        joinPath: (...parts) => pathModule.join(...parts)
+      });
+
+      new Notice(`플러그인을 ${result.version} 버전으로 업데이트했습니다. Obsidian을 다시 시작하거나 플러그인을 다시 로드하세요.`);
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : "플러그인 업데이트에 실패했습니다.");
+    }
   }
 
   private createGraphifyProvider(): {
@@ -463,6 +557,49 @@ function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): Projec
     list: (path) => plugin.app.vault.adapter.list(path),
     rename: (fromPath, toPath) => plugin.app.vault.adapter.rename(fromPath, toPath)
   };
+}
+
+async function requestGitHubJson(url: string): Promise<unknown> {
+  const response = (await requestUrl({
+    url,
+    method: "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    throw: false
+  })) as { status: number; json: unknown };
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`GitHub Release 정보를 가져오지 못했습니다. HTTP ${response.status}`);
+  }
+
+  return response.json;
+}
+
+async function requestGitHubArrayBuffer(url: string): Promise<ArrayBuffer> {
+  const response = (await requestUrl({
+    url,
+    method: "GET",
+    headers: {
+      Accept: "application/octet-stream"
+    },
+    throw: false
+  })) as { status: number; arrayBuffer: ArrayBuffer };
+
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`GitHub Release 파일을 다운로드하지 못했습니다. HTTP ${response.status}`);
+  }
+
+  return response.arrayBuffer;
+}
+
+function loadRequiredDesktopModule<T>(nodeRequire: DesktopRequire, moduleName: string): T {
+  try {
+    return nodeRequire(moduleName) as T;
+  } catch {
+    throw new Error(`Desktop Node 모듈을 사용할 수 없습니다: ${moduleName}`);
+  }
 }
 
 async function openVaultMarkdownFile(plugin: ConfluenceObsidianSyncPlugin, path: string): Promise<void> {

@@ -10,6 +10,8 @@ describe("ConfluenceObsidianSyncPlugin graphify wiring", () => {
     expect(source).toContain("onRunGraphify: (runMode) => this.runGraphifyForCurrentProject(runMode)");
     expect(source).toContain("onOpenGraphifyOutput: (outputFile) => this.openGraphifyOutput(outputFile)");
     expect(source).toContain("onCopyGraphifyMessage: (message) => this.copyGraphifyMessage(message)");
+    expect(source).toContain("onOpenVaultTerminal: () => this.openVaultTerminal()");
+    expect(source).toContain("onUpdatePlugin: () => this.updatePluginFromRelease()");
     expect(source).toContain("confirmGraphifyAgentRun: (message) => window.confirm(message)");
     expect(source).toContain("checkExecutable: (executable) => this.checkExecutableAvailable(executable)");
     expect(source).toContain("createGraphifyObsidianBridge");

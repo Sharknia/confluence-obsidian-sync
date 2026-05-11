@@ -13,7 +13,7 @@ pnpm run package:plugin
 2. 생성된 zip을 새 vault의 플러그인 폴더에 풉니다.
 
 ```text
-dist/confluence-obsidian-sync-0.1.0.zip
+dist/confluence-obsidian-sync-0.1.1.zip
 ```
 
 zip을 풀면 다음 폴더가 생겨야 합니다.
@@ -29,6 +29,14 @@ zip을 풀면 다음 폴더가 생겨야 합니다.
 4. Restricted mode를 끄고, Installed plugins 목록에서 `Confluence Obsidian Sync`를 활성화합니다.
 5. 플러그인 설정에서 Confluence base URL, Atlassian account email, API token을 입력합니다.
 6. 왼쪽 리본 아이콘 또는 명령 팔레트의 `Open Sync Panel`로 Sync Panel을 엽니다.
+
+## 로컬 도구와 플러그인 업데이트
+
+Sync Panel의 `터미널 열기`는 현재 vault 루트를 작업 폴더로 터미널을 엽니다.
+
+Sync Panel의 `플러그인 업데이트`는 GitHub 최신 Release에서 `main.js`, `manifest.json`, `styles.css`만 내려받아 현재 vault의 플러그인 폴더에 교체합니다. 플러그인 설정 파일인 `.obsidian/plugins/confluence-obsidian-sync/data.json`은 덮어쓰지 않습니다.
+
+업데이트 완료 후에는 Obsidian을 다시 시작하거나 플러그인을 다시 로드하세요.
 
 ## Pull 결과 확인
 

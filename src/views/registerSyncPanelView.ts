@@ -17,6 +17,8 @@ export interface CreateSyncPanelViewFactoryInput<TLeaf, TView> {
   onPushCurrentPage: () => void | Promise<void>;
   onOpenRootLink: () => void | Promise<void>;
   onOpenLatestReport: () => void | Promise<void>;
+  onOpenVaultTerminal: () => void | Promise<void>;
+  onUpdatePlugin: () => void | Promise<void>;
   onRunGraphify: (runMode: GraphifyRunMode) => void | Promise<void>;
   onOpenGraphifyOutput: (outputFile: GraphifyOutputFileState) => void | Promise<void>;
   onCopyGraphifyMessage: (message: string) => void | Promise<void>;
@@ -32,6 +34,8 @@ export function createSyncPanelViewFactory<TLeaf, TView>(
     onPushCurrentPage: input.onPushCurrentPage,
     onOpenRootLink: input.onOpenRootLink,
     onOpenLatestReport: input.onOpenLatestReport,
+    onOpenVaultTerminal: input.onOpenVaultTerminal,
+    onUpdatePlugin: input.onUpdatePlugin,
     onRunGraphify: input.onRunGraphify,
     onOpenGraphifyOutput: input.onOpenGraphifyOutput,
     onCopyGraphifyMessage: input.onCopyGraphifyMessage

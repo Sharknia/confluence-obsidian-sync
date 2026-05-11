@@ -40,6 +40,8 @@ describe("createSyncPanelViewFactory", () => {
       onPushCurrentPage: vi.fn(),
       onOpenRootLink: vi.fn(),
       onOpenLatestReport: vi.fn(),
+      onOpenVaultTerminal: vi.fn(),
+      onUpdatePlugin: vi.fn(),
       onRunGraphify: vi.fn(),
       onOpenGraphifyOutput: vi.fn(),
       onCopyGraphifyMessage: vi.fn()

@@ -3,3 +3,5 @@ export const PULL_TREE_COMMAND_ID = "pull-tree";
 export const FORCE_PULL_TREE_COMMAND_ID = "force-pull-tree";
 export const PULL_CURRENT_PAGE_COMMAND_ID = "pull-current-page";
 export const PUSH_CURRENT_PAGE_COMMAND_ID = "push-current-page";
+export const OPEN_VAULT_TERMINAL_COMMAND_ID = "open-vault-terminal";
+export const UPDATE_PLUGIN_COMMAND_ID = "update-plugin";

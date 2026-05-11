@@ -9,6 +9,8 @@ export interface SyncPanelActions {
   onPushCurrentPage: () => void | Promise<void>;
   onOpenRootLink: () => void | Promise<void>;
   onOpenLatestReport: () => void | Promise<void>;
+  onOpenVaultTerminal: () => void | Promise<void>;
+  onUpdatePlugin: () => void | Promise<void>;
   onRunGraphify: (runMode: GraphifyRunMode) => void | Promise<void>;
   onOpenGraphifyOutput: (outputFile: GraphifyOutputFileState) => void | Promise<void>;
   onCopyGraphifyMessage: (message: string) => void | Promise<void>;
@@ -18,6 +20,7 @@ interface SyncPanelProjectAction {
   label: string;
   title: string;
   description: string;
+  requiresProject: boolean;
   onClick: () => void | Promise<void>;
 }
 
@@ -87,7 +90,7 @@ export function renderSyncPanelContent(
       appendProjectActionCard(
         actionListEl,
         action,
-        !state.canRunProjectActions,
+        action.requiresProject && !state.canRunProjectActions,
         actionStatusEl,
         actionButtons
       )
@@ -106,25 +109,43 @@ function createProjectActions(actions: SyncPanelActions): SyncPanelProjectAction
       label: "Pull Tree",
       title: "전체 내려받기",
       description: "현재 프로젝트의 Confluence 트리를 로컬 Markdown으로 갱신합니다.",
+      requiresProject: true,
       onClick: actions.onPullTree
     },
     {
       label: "Force Pull Tree",
       title: "전체 강제 내려받기",
       description: "로컬 수정본을 백업 없이 원격 본문으로 덮어씁니다.",
+      requiresProject: true,
       onClick: actions.onForcePullTree
     },
     {
       label: "Pull Current Page",
       title: "현재 문서 내려받기",
       description: "현재 열린 Markdown 파일 1개만 원격 최신 본문으로 갱신합니다. 로컬 수정본이 있으면 연결이 해제된 백업본을 먼저 생성합니다.",
+      requiresProject: true,
       onClick: actions.onPullCurrentPage
     },
     {
       label: "Push Current Page",
       title: "현재 문서 올리기",
       description: "현재 열린 Markdown 파일 1개를 기존 Confluence 페이지에 업로드합니다.",
+      requiresProject: true,
       onClick: actions.onPushCurrentPage
+    },
+    {
+      label: "Open Terminal",
+      title: "터미널 열기",
+      description: "현재 vault 루트를 터미널 작업 폴더로 엽니다.",
+      requiresProject: false,
+      onClick: actions.onOpenVaultTerminal
+    },
+    {
+      label: "Update Plugin",
+      title: "플러그인 업데이트",
+      description: "GitHub 최신 릴리스의 플러그인 파일만 교체합니다. 설정은 유지됩니다.",
+      requiresProject: false,
+      onClick: actions.onUpdatePlugin
     }
   ];
 }
