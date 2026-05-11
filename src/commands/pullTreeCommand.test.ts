@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runPullTreeCommand, type PullTreeFetcher } from "./pullTreeCommand";
 import { calculateMarkdownBodyHash } from "../projects/pageMarkdown";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
-import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 
 interface StorageMock extends ProjectStorageAdapter {
   writtenFiles: Array<{ path: string; data: string }>;
@@ -97,8 +97,61 @@ describe("runPullTreeCommand", () => {
     ]);
   });
 
-  it("현재 프로젝트가 없으면 설정 화면에서 프로젝트 생성을 안내한다", async () => {
+  it("현재 프로젝트가 없으면 Pull 실행 중 프로젝트를 자동 생성하고 페이지 트리를 조회한다", async () => {
     const notices: string[] = [];
+    const settings = createSettings({ currentProject: null });
+    const storage = createStorageMock();
+    const createdProject: CurrentConfluenceProjectSettings = {
+      projectName: "Auto Root",
+      spaceId: "SPACE",
+      rootContentType: "page",
+      rootContentId: "200",
+      rootPageId: "200",
+      rootUrl: settings.defaultRootContentUrl,
+      localFolderPath: "confluence/Auto Root",
+      manifestPath: "confluence/Auto Root/.confluence-sync/manifest.json"
+    };
+    const fetchedRoots: Array<{ rootContentType: "page" | "folder"; rootContentId: string }> = [];
+    const fetchTree: PullTreeFetcher = (_settings, rootContentType, rootContentId) => {
+      fetchedRoots.push({ rootContentType, rootContentId });
+
+      return Promise.resolve({
+        ok: true,
+        root: {
+          pageId: "200",
+          title: "Auto Root",
+          parentId: null,
+          versionNumber: 1,
+          bodyStorageValue: "<p>Hello</p>",
+          sourceUrl: settings.defaultRootContentUrl,
+          depth: 0,
+          childPosition: 0,
+          children: []
+        },
+        pages: [],
+        errors: []
+      });
+    };
+
+    await runPullTreeCommand({
+      settings,
+      storage,
+      fetchTree,
+      ensureCurrentProject: () =>
+        Promise.resolve({
+          ok: true,
+          currentProject: createdProject
+        }),
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(fetchedRoots).toEqual([{ rootContentType: "page", rootContentId: "200" }]);
+    expect(notices).toEqual(["Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
+  });
+
+  it("프로젝트 자동 생성에 실패하면 latest 로그에 원인을 남기고 Pull을 중단한다", async () => {
+    const notices: string[] = [];
+    const openedReports: string[] = [];
     const fetchTree: PullTreeFetcher = () => Promise.reject(new Error("fetchTree should not be called"));
     const storage = createStorageMock();
 
@@ -106,10 +159,24 @@ describe("runPullTreeCommand", () => {
       settings: createSettings({ currentProject: null }),
       storage,
       fetchTree,
-      showNotice: (message) => notices.push(message)
+      ensureCurrentProject: () =>
+        Promise.resolve({
+          ok: false,
+          message: "루트 콘텐츠 URL을 해석할 수 없습니다."
+        }),
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
     });
 
-    expect(notices).toEqual(["Pull Tree 실행 전에 설정 화면에서 루트 콘텐츠 기반 프로젝트를 생성하세요."]);
+    expect(getPullReportWrites(storage)).toHaveLength(1);
+    expect(getPullReportWrites(storage)[0]?.path).toBe("logs/latest.md");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("# 프로젝트 초기화 실패 리포트");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("루트 콘텐츠 URL을 해석할 수 없습니다.");
+    expect(openedReports).toEqual(["logs/latest.md"]);
+    expect(notices).toEqual(["프로젝트 초기화 실패: 루트 콘텐츠 URL을 해석할 수 없습니다."]);
   });
 
   it("루트 콘텐츠가 폴더이면 folder rootContentId로 페이지 트리를 조회한다", async () => {
