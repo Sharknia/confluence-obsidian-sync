@@ -9,8 +9,9 @@ import {
   UPDATE_PLUGIN_COMMAND_ID
 } from "./commands/commandIds";
 import { runPullCurrentPageCommand } from "./commands/pullCurrentPageCommand";
-import { runPullTreeCommand } from "./commands/pullTreeCommand";
+import { runPullTreeCommand, type PullTreeProjectEnsurerResult } from "./commands/pullTreeCommand";
 import { runPushCurrentPageCommand } from "./commands/pushCurrentPageCommand";
+import { createObsidianRequestTransport } from "./confluence/obsidianRequestTransport";
 import {
   resolveGraphifyExecutable,
   type GraphifyAvailability,
@@ -27,6 +28,7 @@ import {
 } from "./graphify/graphifyDesktopRuntime";
 import { createGraphifyObsidianBridge } from "./graphify/graphifyObsidianBridge";
 import { buildPullReportPath } from "./projects/pullReport";
+import { createProjectFromRootUrl } from "./projects/createProjectFromRootUrl";
 import type { ProjectStorageAdapter } from "./projects/projectStorage";
 import {
   DEFAULT_PLUGIN_ID,
@@ -176,6 +178,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     await runPullTreeCommand({
       settings: this.settings,
       storage: createVaultStorageAdapter(this),
+      ensureCurrentProject: () => this.ensureCurrentProject(),
       showNotice: (message) => new Notice(message),
       openReport: (path) => openVaultMarkdownFile(this, path)
     });
@@ -187,6 +190,7 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     await runPullTreeCommand({
       settings: this.settings,
       storage: createVaultStorageAdapter(this),
+      ensureCurrentProject: () => this.ensureCurrentProject(),
       mode: "force",
       confirmForcePull: (message) => window.confirm(message),
       showNotice: (message) => new Notice(message),
@@ -194,6 +198,55 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     });
 
     await this.refreshSyncPanelViews();
+  }
+
+  private async ensureCurrentProject(): Promise<PullTreeProjectEnsurerResult> {
+    if (this.settings.currentProject !== null) {
+      return {
+        ok: true,
+        currentProject: this.settings.currentProject
+      };
+    }
+
+    let result: Awaited<ReturnType<typeof createProjectFromRootUrl>>;
+
+    try {
+      result = await createProjectFromRootUrl({
+        settings: this.settings,
+        rawRootUrl: this.settings.defaultRootContentUrl,
+        transport: createObsidianRequestTransport,
+        storage: createVaultStorageAdapter(this),
+        now: () => new Date()
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "Confluence 프로젝트를 생성할 수 없습니다."
+      };
+    }
+
+    if (!result.ok) {
+      return result;
+    }
+
+    const previousCurrentProject = this.settings.currentProject;
+    this.settings.currentProject = result.currentProject;
+
+    try {
+      await this.saveSettings();
+    } catch (error) {
+      this.settings.currentProject = previousCurrentProject;
+
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : "프로젝트 설정을 저장할 수 없습니다."
+      };
+    }
+
+    return {
+      ok: true,
+      currentProject: result.currentProject
+    };
   }
 
   private async pullCurrentPage(): Promise<void> {

@@ -13,7 +13,7 @@ pnpm run package:plugin
 2. 생성된 zip을 새 vault의 플러그인 폴더에 풉니다.
 
 ```text
-dist/confluence-obsidian-sync-0.1.1.zip
+dist/confluence-obsidian-sync-0.1.2.zip
 ```
 
 zip을 풀면 다음 폴더가 생겨야 합니다.

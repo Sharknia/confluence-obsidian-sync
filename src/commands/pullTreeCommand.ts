@@ -20,7 +20,7 @@ import {
   type ProjectStorageAdapter,
   type PullSyncApplyResult
 } from "../projects/projectStorage";
-import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 
 export type PullTreeFetcher = (
   settings: ConfluenceSyncSettings,
@@ -32,11 +32,31 @@ export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
   storage: ProjectStorageAdapter;
   fetchTree?: PullTreeFetcher;
+  ensureCurrentProject?: PullTreeProjectEnsurer;
   mode?: "normal" | "force";
   confirmForcePull?: (message: string) => boolean;
   showNotice: (message: string) => void;
   openReport?: (path: string) => Promise<void>;
 }
+
+export type PullTreeProjectEnsurer = (
+  input: PullTreeProjectEnsurerInput
+) => Promise<PullTreeProjectEnsurerResult>;
+
+export interface PullTreeProjectEnsurerInput {
+  settings: ConfluenceSyncSettings;
+  storage: ProjectStorageAdapter;
+}
+
+export type PullTreeProjectEnsurerResult =
+  | {
+      ok: true;
+      currentProject: CurrentConfluenceProjectSettings;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
 
 const forcePullConfirmationMessage = "로컬의 변경사항이 모두 취소됩니다. 정말 실행하시겠습니까?";
 
@@ -54,6 +74,7 @@ export async function runPullTreeCommand({
   settings,
   storage,
   fetchTree = defaultPullTreeFetcher,
+  ensureCurrentProject,
   mode = "normal",
   confirmForcePull,
   showNotice,
@@ -70,14 +91,19 @@ export async function runPullTreeCommand({
     return;
   }
 
-  const currentProject = settings.currentProject;
-
-  if (currentProject === null) {
-    showNotice("Pull Tree 실행 전에 설정 화면에서 루트 콘텐츠 기반 프로젝트를 생성하세요.");
-    return;
-  }
-
   try {
+    const currentProject = await resolveCurrentProjectForPull({
+      settings,
+      storage,
+      ensureCurrentProject,
+      showNotice,
+      openReport
+    });
+
+    if (currentProject === null) {
+      return;
+    }
+
     const safeDeleteRootPath = buildSafeDeleteRootPath(
       currentProject.localFolderPath,
       settings.safeDeleteFolder,
@@ -233,6 +259,51 @@ export async function runPullTreeCommand({
   }
 }
 
+async function resolveCurrentProjectForPull({
+  settings,
+  storage,
+  ensureCurrentProject,
+  showNotice,
+  openReport
+}: {
+  settings: ConfluenceSyncSettings;
+  storage: ProjectStorageAdapter;
+  ensureCurrentProject: PullTreeProjectEnsurer | undefined;
+  showNotice: (message: string) => void;
+  openReport: ((path: string) => Promise<void>) | undefined;
+}): Promise<CurrentConfluenceProjectSettings | null> {
+  if (settings.currentProject !== null) {
+    return settings.currentProject;
+  }
+
+  if (ensureCurrentProject === undefined) {
+    showNotice("Pull Tree 실행 전에 Root content URL 설정이 필요합니다.");
+    return null;
+  }
+
+  const result = await ensureCurrentProject({ settings, storage });
+
+  if (result.ok) {
+    return result.currentProject;
+  }
+
+  const reportPath = await writeProjectInitializationFailureReport(storage, {
+    failedAt: new Date(),
+    message: result.message
+  });
+
+  if (openReport !== undefined) {
+    try {
+      await openReport(reportPath);
+    } catch {
+      showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`);
+    }
+  }
+
+  showNotice(`프로젝트 초기화 실패: ${result.message}`);
+  return null;
+}
+
 function buildForceOverwriteNoticePart(mode: "normal" | "force", overwrittenCount: number): string {
   return mode === "force" ? `, 강제 덮어쓰기 ${overwrittenCount}개` : "";
 }
@@ -324,6 +395,11 @@ interface ForcePullCancelReportInput {
   changedLocalFiles: ChangedLocalMarkdownFile[];
 }
 
+interface ProjectInitializationFailureReportInput {
+  failedAt: Date;
+  message: string;
+}
+
 interface ChangedLocalMarkdownFile {
   vaultPath: string;
   pageId: string;
@@ -360,6 +436,22 @@ async function writeForcePullCancelReport(
   }
 
   await storage.write(reportPath, buildForcePullCancelReportMarkdown(reportInput));
+
+  return reportPath;
+}
+
+async function writeProjectInitializationFailureReport(
+  storage: ProjectStorageAdapter,
+  reportInput: ProjectInitializationFailureReportInput
+): Promise<string> {
+  const reportPath = buildPullReportPath("");
+  const reportFolderPath = reportPath.split("/").slice(0, -1).join("/");
+
+  if (!(await storage.exists(reportFolderPath))) {
+    await storage.mkdir(reportFolderPath);
+  }
+
+  await storage.write(reportPath, buildProjectInitializationFailureReportMarkdown(reportInput));
 
   return reportPath;
 }
@@ -413,6 +505,18 @@ function buildForcePullCancelReportMarkdown(input: ForcePullCancelReportInput): 
     "",
     "## 변경된 로컬 파일",
     ...formatChangedLocalFiles(input.changedLocalFiles),
+    ""
+  ];
+
+  return `${lines.join("\n")}\n`;
+}
+
+function buildProjectInitializationFailureReportMarkdown(input: ProjectInitializationFailureReportInput): string {
+  const lines = [
+    "# 프로젝트 초기화 실패 리포트",
+    "",
+    `- 실행 시각: ${input.failedAt.toISOString()}`,
+    `- 실패 원인: ${input.message}`,
     ""
   ];
 

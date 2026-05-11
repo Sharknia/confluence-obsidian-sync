@@ -1,8 +1,6 @@
 import { Notice, PluginSettingTab, Setting } from "obsidian";
 import { checkConfluenceConnection } from "../confluence/connectionCheck";
 import { createObsidianRequestTransport } from "../confluence/obsidianRequestTransport";
-import { createProjectFromRootUrl } from "../projects/createProjectFromRootUrl";
-import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type ConfluenceObsidianSyncPlugin from "../main";
 import { normalizeConfluenceBaseUrl } from "./defaultSettings";
 import { appendGraphifySettingsSection } from "./graphifySettingsSection";
@@ -68,9 +66,9 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
       });
     appendApiTokenHelp(containerEl);
 
-    let rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? this.plugin.settings.defaultRootContentUrl;
+    const rootContentUrl = this.plugin.settings.currentProject?.rootUrl ?? this.plugin.settings.defaultRootContentUrl;
 
-    const currentProjectStatusEl = containerEl.createEl("p", {
+    containerEl.createEl("p", {
       cls: "confluence-sync-current-project-status",
       text: this.buildCurrentProjectStatusText()
     });
@@ -79,68 +77,18 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
       text: "Pull Tree는 현재 루트 콘텐츠 기준 Confluence 페이지 트리를 조회하고 Markdown 파일로 저장합니다."
     });
 
-    const projectCreationStatusEl = containerEl.createEl("p", {
-      cls: "confluence-sync-project-creation-status",
-      text: "루트 페이지 또는 루트 폴더 기반 프로젝트를 생성할 수 있습니다."
-    });
-
     new Setting(containerEl)
       .setName("Root content URL")
-      .setDesc("루트 페이지 또는 루트 폴더 URL로 Confluence 프로젝트를 생성합니다.")
+      .setDesc("Pull Tree 또는 Force Pull Tree 실행 시 필요한 경우 자동으로 프로젝트를 생성합니다.")
       .addText((text) => {
         text
           .setPlaceholder("https://selta.atlassian.net/wiki/spaces/DEV/pages/123456789/Project+Root")
           .setValue(rootContentUrl)
-          .onChange((value) => {
-            rootContentUrl = value;
+          .onChange(async (value) => {
+            const trimmedRootContentUrl = value.trim();
+            this.plugin.settings.defaultRootContentUrl = trimmedRootContentUrl;
+            await this.plugin.saveSettings();
           });
-      });
-
-    new Setting(containerEl)
-      .setName("Create project")
-      .setDesc("루트 페이지 또는 폴더 URL을 기반으로 로컬 프로젝트 manifest와 폴더를 생성합니다.")
-      .addButton((button) => {
-        button.setButtonText("Create project").onClick(async () => {
-          button.setDisabled(true);
-          projectCreationStatusEl.setText("Confluence 프로젝트를 생성하는 중입니다...");
-
-          try {
-            const result = await createProjectFromRootUrl({
-              settings: this.plugin.settings,
-              rawRootUrl: rootContentUrl,
-              transport: createObsidianRequestTransport,
-              storage: createVaultStorageAdapter(this.plugin),
-              now: () => new Date()
-            });
-
-            if (result.ok) {
-              const previousCurrentProject = this.plugin.settings.currentProject;
-              this.plugin.settings.currentProject = result.currentProject;
-
-              try {
-                await this.plugin.saveSettings();
-              } catch (error) {
-                this.plugin.settings.currentProject = previousCurrentProject;
-                throw error;
-              }
-
-              currentProjectStatusEl.setText(this.buildCurrentProjectStatusText());
-            }
-
-            projectCreationStatusEl.setText(result.message);
-            new Notice(result.message);
-          } catch (error) {
-            const message =
-              error instanceof Error
-                ? error.message
-                : "Confluence 프로젝트 생성 중 알 수 없는 오류가 발생했습니다.";
-
-            projectCreationStatusEl.setText(message);
-            new Notice(message);
-          } finally {
-            button.setDisabled(false);
-          }
-        });
       });
 
     const connectionStatusEl = containerEl.createEl("p", {
@@ -209,7 +157,7 @@ export class ConfluenceSyncSettingTab extends PluginSettingTab {
     const currentProject = this.plugin.settings.currentProject;
 
     if (currentProject === null) {
-      return "현재 생성된 Confluence 프로젝트가 없습니다.";
+      return "현재 프로젝트가 없습니다. Pull Tree 실행 시 Root content URL 기준으로 자동 생성됩니다.";
     }
 
     return `현재 프로젝트: ${currentProject.projectName} (${currentProject.localFolderPath})`;
@@ -229,15 +177,4 @@ function appendApiTokenHelp(containerEl: HTMLElement): void {
   linkEl.rel = "noreferrer";
 
   helpEl.append("에서 발급할 수 있습니다.");
-}
-
-function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): ProjectStorageAdapter {
-  return {
-    exists: (path) => plugin.app.vault.adapter.exists(path),
-    mkdir: (path) => plugin.app.vault.adapter.mkdir(path),
-    read: (path) => plugin.app.vault.adapter.read(path),
-    write: (path, data) => plugin.app.vault.adapter.write(path, data),
-    list: (path) => plugin.app.vault.adapter.list(path),
-    rename: (fromPath, toPath) => plugin.app.vault.adapter.rename(fromPath, toPath)
-  };
 }
