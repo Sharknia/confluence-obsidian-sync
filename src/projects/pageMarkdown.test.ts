@@ -762,6 +762,32 @@ Other content
     ]);
   });
 
+  it("does not report conversion warning issues for supported expand macros", async () => {
+    const page = createPage({
+      pageId: "68026414",
+      title: "Auto Narrative",
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="expand">
+          <ac:parameter ac:name="title">Narrative details</ac:parameter>
+          <ac:rich-text-body>
+            <p>Hidden narrative</p>
+          </ac:rich-text-body>
+        </ac:structured-macro>
+      `,
+    });
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root: { ...page, children: [] },
+      pages: [page],
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.conversionIssues).toEqual([]);
+    expect(result.files[0]?.content).toContain("> [!note]- Narrative details");
+    expect(result.files[0]?.content).toContain("> Hidden narrative");
+  });
+
   it("continues other pages when one page conversion fails", async () => {
     const rootPage = createPage({
       pageId: "100",

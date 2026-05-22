@@ -280,6 +280,144 @@ console.log(answer);]]></ac:plain-text-body>
     });
   });
 
+  it("converts Confluence expand macros to foldable Obsidian callouts", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">More details</ac:parameter>
+        <ac:rich-text-body>
+          <p>First paragraph</p>
+          <ul>
+            <li>One</li>
+            <li>Two</li>
+          </ul>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: [
+        "> [!note]- More details",
+        "> First paragraph",
+        ">",
+        "> - One",
+        "> - Two",
+      ].join("\n"),
+      warnings: [],
+    });
+  });
+
+  it("uses the Confluence expand default title when the title is blank", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">   </ac:parameter>
+        <ac:rich-text-body>
+          <p>Hidden body</p>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: [
+        "> [!note]- Click here to expand...",
+        "> Hidden body",
+      ].join("\n"),
+      warnings: [],
+    });
+  });
+
+  it("normalizes Confluence expand titles before rendering callout headers", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">  More
+   details	 now  </ac:parameter>
+        <ac:rich-text-body>
+          <p>Hidden body</p>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: [
+        "> [!note]- More details now",
+        "> Hidden body",
+      ].join("\n"),
+      warnings: [],
+    });
+  });
+
+  it("uses the Confluence expand default title when the title parameter is missing", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:rich-text-body>
+          <p>Hidden body</p>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: [
+        "> [!note]- Click here to expand...",
+        "> Hidden body",
+      ].join("\n"),
+      warnings: [],
+    });
+  });
+
+  it("keeps empty Confluence expand macros as foldable callout headers", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Empty details</ac:parameter>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: "> [!note]- Empty details",
+      warnings: [],
+    });
+  });
+
+  it("keeps Confluence expand macros with blank rich text bodies as foldable callout headers", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Blank body</ac:parameter>
+        <ac:rich-text-body>   </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: "> [!note]- Blank body",
+      warnings: [],
+    });
+  });
+
+  it("preserves nested Confluence expand macros as nested foldable callouts", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:structured-macro ac:name="expand">
+        <ac:parameter ac:name="title">Outer</ac:parameter>
+        <ac:rich-text-body>
+          <p>Outer body</p>
+          <ac:structured-macro ac:name="expand">
+            <ac:parameter ac:name="title">Inner</ac:parameter>
+            <ac:rich-text-body>
+              <p>Inner body</p>
+            </ac:rich-text-body>
+          </ac:structured-macro>
+        </ac:rich-text-body>
+      </ac:structured-macro>
+    `);
+
+    expect(result).toEqual({
+      markdown: [
+        "> [!note]- Outer",
+        "> Outer body",
+        ">",
+        "> > [!note]- Inner",
+        "> > Inner body",
+      ].join("\n"),
+      warnings: [],
+    });
+  });
+
   it("keeps Confluence view-file macros as notes when no local attachment resolver is provided", () => {
     const result = convertConfluenceStorageToMarkdown(`
       <ac:structured-macro ac:name="view-file">

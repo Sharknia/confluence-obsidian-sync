@@ -27,6 +27,8 @@ const EMBEDDED_IMAGE_UNSUPPORTED_MESSAGE =
 const ATTACHMENT_NOTE_UNSUPPORTED_MESSAGE =
   "Confluence attachment viewer 메모가 있어 Push를 중단합니다. 첨부파일 매크로 손실을 막기 위해 제거 후 다시 시도하세요.";
 const UNSUPPORTED_MACRO_WARNING_MESSAGE = "변환되지 않은 Confluence macro 경고가 있어 Push를 중단합니다.";
+const EXPAND_CALLOUT_UNSUPPORTED_MESSAGE =
+  "Confluence expand macro callout이 있어 Push를 중단합니다. expand macro 손실을 막기 위해 제거 후 다시 시도하세요.";
 const UNSAFE_LINK_UNSUPPORTED_MESSAGE =
   "안전하지 않은 링크 URL이 있어 Push를 중단합니다. http, https, mailto, 상대 경로 링크만 사용할 수 있습니다.";
 const GENERIC_CONVERSION_FAILURE_MESSAGE = "Markdown을 Confluence storage 형식으로 변환할 수 없습니다.";
@@ -85,6 +87,10 @@ function findUnsupportedMarkdownPatternMessage(markdown: string): string | null 
 
   if (/\[!warning\]\s+Confluence macro not converted:/imu.test(markdown)) {
     return UNSUPPORTED_MACRO_WARNING_MESSAGE;
+  }
+
+  if (/^>\s*\[!note\]-\s+.+$/imu.test(markdown)) {
+    return EXPAND_CALLOUT_UNSUPPORTED_MESSAGE;
   }
 
   return null;

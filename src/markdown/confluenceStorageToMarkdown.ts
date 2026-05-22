@@ -21,6 +21,7 @@ export interface ConfluenceStorageToMarkdownOptions {
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 const COMMENT_NODE = 8;
+const DEFAULT_EXPAND_TITLE = "Click here to expand...";
 
 export function convertConfluenceStorageToMarkdown(
   storageValue: string,
@@ -34,11 +35,7 @@ export function convertConfluenceStorageToMarkdown(
     return { markdown: "", warnings };
   }
 
-  const markdown = getChildNodes(root)
-    .map((node) => renderBlockNode(node, warnings, options))
-    .filter((block) => block.length > 0)
-    .join("\n\n")
-    .trim();
+  const markdown = renderBlockChildren(root, warnings, options).trim();
 
   return { markdown, warnings };
 }
@@ -87,10 +84,7 @@ function renderBlockNode(
     return renderFencedCodeBlock(getNodeTextContent(node).trim(), "");
   }
 
-  return getChildNodes(node)
-    .map((childNode) => renderBlockNode(childNode, warnings, options))
-    .filter((block) => block.length > 0)
-    .join("\n\n");
+  return renderBlockChildren(node, warnings, options);
 }
 
 function renderInlineNode(
@@ -222,6 +216,10 @@ function renderStructuredMacro(
     return renderFencedCodeBlock(code, sanitizeCodeFenceInfo(language));
   }
 
+  if (macroName === "expand") {
+    return renderExpandMacro(macroElement, warnings, options);
+  }
+
   warnings.push({ type: "unsupported-macro", name: macroName });
   return `> [!warning] Confluence macro not converted: ${macroName}`;
 }
@@ -241,6 +239,42 @@ function renderJiraMacro(
   return issueUrl !== null && issueUrl.length > 0
     ? `[${escapeMarkdownLinkLabel(issueKey)}](${issueUrl})`
     : issueKey;
+}
+
+function renderExpandMacro(
+  macroElement: Element,
+  warnings: ConfluenceStorageToMarkdownWarning[],
+  options: ConfluenceStorageToMarkdownOptions,
+): string {
+  const normalizedTitle = normalizeWhitespace(findMacroParameterValue(macroElement, "title")).trim();
+  const title = normalizedTitle.length === 0 ? DEFAULT_EXPAND_TITLE : normalizedTitle;
+  const bodyElement = findFirstChildElementByTagName(macroElement, "ac:rich-text-body");
+  const bodyMarkdown = bodyElement === null ? "" : renderBlockChildren(bodyElement, warnings, options).trim();
+  const calloutHeader = `> [!note]- ${title}`;
+
+  if (bodyMarkdown.length === 0) {
+    return calloutHeader;
+  }
+
+  return `${calloutHeader}\n${quoteMarkdownForCallout(bodyMarkdown)}`;
+}
+
+function renderBlockChildren(
+  element: Element,
+  warnings: ConfluenceStorageToMarkdownWarning[],
+  options: ConfluenceStorageToMarkdownOptions,
+): string {
+  return getChildNodes(element)
+    .map((node) => renderBlockNode(node, warnings, options))
+    .filter((block) => block.length > 0)
+    .join("\n\n");
+}
+
+function quoteMarkdownForCallout(markdown: string): string {
+  return markdown
+    .split("\n")
+    .map((line) => (line.length === 0 ? ">" : `> ${line}`))
+    .join("\n");
 }
 
 function renderViewFileMacro(
