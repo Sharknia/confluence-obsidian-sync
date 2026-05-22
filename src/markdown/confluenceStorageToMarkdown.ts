@@ -15,6 +15,7 @@ export interface ConfluenceStorageToMarkdownResult {
 export interface ConfluenceStorageToMarkdownOptions {
   resolvePageLinkTarget?: (contentTitle: string) => string;
   resolveJiraIssueUrl?: (issueKey: string) => string | null;
+  resolveAttachmentLinkTarget?: (attachmentFileName: string) => string | null;
 }
 
 const ELEMENT_NODE = 1;
@@ -83,7 +84,7 @@ function renderBlockNode(
   }
 
   if (tagName === "pre") {
-    return `\`\`\`\n${getNodeTextContent(node).trim()}\n\`\`\``;
+    return renderFencedCodeBlock(getNodeTextContent(node).trim(), "");
   }
 
   return getChildNodes(node)
@@ -114,7 +115,7 @@ function renderInlineNode(
   if (tagName === "a") {
     const label = renderInlineChildren(node, warnings, options).trim() || (node.getAttribute("href") ?? "").trim();
     const href = (node.getAttribute("href") ?? "").trim();
-    return href.length > 0 ? `[${label}](${href})` : label;
+    return href.length > 0 ? renderMarkdownLink(label, href) : label;
   }
 
   if (tagName === "ac:link") {
@@ -134,7 +135,7 @@ function renderInlineNode(
   }
 
   if (tagName === "code") {
-    return `\`${getNodeTextContent(node).trim()}\``;
+    return renderInlineCode(getNodeTextContent(node));
   }
 
   return renderInlineChildren(node, warnings, options);
@@ -209,7 +210,7 @@ function renderStructuredMacro(
   }
 
   if (macroName === "view-file") {
-    return renderViewFileMacro(macroElement);
+    return renderViewFileMacro(macroElement, options);
   }
 
   if (macroName === "code") {
@@ -218,7 +219,7 @@ function renderStructuredMacro(
       ?? findFirstChildElementByTagName(macroElement, "ac:rich-text-body");
     const code = codeBody ? getNodeTextContent(codeBody).trim() : "";
 
-    return `\`\`\`${language}\n${code}\n\`\`\``;
+    return renderFencedCodeBlock(code, sanitizeCodeFenceInfo(language));
   }
 
   warnings.push({ type: "unsupported-macro", name: macroName });
@@ -242,7 +243,10 @@ function renderJiraMacro(
     : issueKey;
 }
 
-function renderViewFileMacro(macroElement: Element): string {
+function renderViewFileMacro(
+  macroElement: Element,
+  options: ConfluenceStorageToMarkdownOptions,
+): string {
   const attachmentFileName = (
     findFirstDescendantElementByTagName(macroElement, "ri:attachment")?.getAttribute("ri:filename")
     ?? findMacroParameterValue(macroElement, "name")
@@ -253,7 +257,21 @@ function renderViewFileMacro(macroElement: Element): string {
     return "> [!note] Confluence attachment viewer";
   }
 
+  const attachmentLinkTarget = options.resolveAttachmentLinkTarget?.(attachmentFileName)?.trim() ?? "";
+
+  if (attachmentLinkTarget.length > 0) {
+    return `[[${escapeObsidianWikiLinkPart(attachmentLinkTarget)}|${escapeObsidianWikiLinkPart(attachmentFileName)}]]`;
+  }
+
   return `> [!note] Confluence attachment viewer: ${attachmentFileName}`;
+}
+
+function escapeObsidianWikiLinkPart(value: string): string {
+  return value
+    .replace(/[[\]\r\n]/g, " ")
+    .replace(/\|/g, "¦")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderTable(
@@ -324,7 +342,44 @@ function escapeMarkdownTableCell(value: string): string {
 }
 
 function escapeMarkdownLinkLabel(value: string): string {
-  return value.replace(/\]/g, "\\]");
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/[[\]]/g, (character) => `\\${character}`);
+}
+
+function escapeMarkdownLinkDestination(value: string): string {
+  return value
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .replace(/ /g, "%20")
+    .replace(/\)/g, "\\)");
+}
+
+function renderMarkdownLink(label: string, destination: string): string {
+  return `[${escapeMarkdownLinkLabel(label)}](${escapeMarkdownLinkDestination(destination)})`;
+}
+
+function renderMarkdownImage(label: string, destination: string): string {
+  return `![${escapeMarkdownLinkLabel(label)}](${escapeMarkdownLinkDestination(destination)})`;
+}
+
+function renderFencedCodeBlock(code: string, infoString: string): string {
+  const fence = "`".repeat(Math.max(3, getLongestBacktickRunLength(code) + 1));
+  return `${fence}${infoString}\n${code}\n${fence}`;
+}
+
+function renderInlineCode(code: string): string {
+  const delimiter = "`".repeat(Math.max(1, getLongestBacktickRunLength(code) + 1));
+  const needsPadding = /^[` ]|[` ]$/.test(code);
+  return needsPadding ? `${delimiter} ${code} ${delimiter}` : `${delimiter}${code}${delimiter}`;
+}
+
+function sanitizeCodeFenceInfo(value: string): string {
+  return value.replace(/[\r\n`]/g, "").trim();
+}
+
+function getLongestBacktickRunLength(value: string): number {
+  return Math.max(0, ...Array.from(value.matchAll(/`+/g), (match) => match[0].length));
 }
 
 function renderConfluenceLink(
@@ -342,11 +397,13 @@ function renderConfluenceLink(
 
   if (pageTitle.length > 0) {
     const linkTarget = options.resolvePageLinkTarget?.(pageTitle) ?? pageTitle;
-    return label === pageTitle ? `[[${linkTarget}]]` : `[[${linkTarget}|${label}]]`;
+    const escapedLinkTarget = escapeObsidianWikiLinkPart(linkTarget);
+    const escapedLabel = escapeObsidianWikiLinkPart(label);
+    return label === pageTitle ? `[[${escapedLinkTarget}]]` : `[[${escapedLinkTarget}|${escapedLabel}]]`;
   }
 
   if (url.length > 0) {
-    return label.length > 0 ? `[${label}](${url})` : url;
+    return label.length > 0 ? renderMarkdownLink(label, url) : url;
   }
 
   return label;
@@ -361,7 +418,7 @@ function renderConfluenceImage(imageElement: Element): string {
     return "";
   }
 
-  return `![image](${imageUrl})`;
+  return renderMarkdownImage("image", imageUrl);
 }
 
 function findMacroParameterValue(macroElement: Element, parameterName: string): string {

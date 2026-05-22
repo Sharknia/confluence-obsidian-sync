@@ -71,6 +71,29 @@ describe("convertConfluenceStorageToMarkdown", () => {
     });
   });
 
+  it("escapes Obsidian wikilink target and label when converting Confluence page links", () => {
+    const result = convertConfluenceStorageToMarkdown(
+      `
+        <p>
+          <ac:link>
+            <ri:page ri:content-title="Team | API] Sync" />
+            <ac:link-body>API |
+              Sync]</ac:link-body>
+          </ac:link>
+        </p>
+      `,
+      {
+        resolvePageLinkTarget: () => `Docs | Team]
+          API`,
+      },
+    );
+
+    expect(result).toEqual({
+      markdown: "[[Docs ¦ Team API|API ¦ Sync]]",
+      warnings: [],
+    });
+  });
+
   it("converts Confluence URL links to Markdown links", () => {
     const result = convertConfluenceStorageToMarkdown(`
       <p>
@@ -103,6 +126,35 @@ describe("convertConfluenceStorageToMarkdown", () => {
     });
   });
 
+  it("escapes Markdown link labels and destinations when converting URL links", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <p>
+        <a href="https://example.com/a b)c
+d">A [ref] link</a>
+        <ac:link>
+          <ri:url ri:value="https://example.com/spec draft).html" />
+          <ac:link-body>Spec [draft]</ac:link-body>
+        </ac:link>
+      </p>
+    `);
+
+    expect(result).toEqual({
+      markdown: "[A \\[ref\\] link](https://example.com/a%20b\\)c%20d) [Spec \\[draft\\]](https://example.com/spec%20draft\\).html)",
+      warnings: [],
+    });
+  });
+
+  it("escapes backslashes before brackets in Markdown link labels", () => {
+    const result = convertConfluenceStorageToMarkdown(
+      '<p><a href="https://example.com/spec">Path \\[draft]</a></p>',
+    );
+
+    expect(result).toEqual({
+      markdown: String.raw`[Path \\\[draft\]](https://example.com/spec)`,
+      warnings: [],
+    });
+  });
+
   it("converts sampled Confluence URL images to Markdown images", () => {
     const result = convertConfluenceStorageToMarkdown(`
       <ac:image ac:align="center" ac:layout="center" ac:original-height="310" ac:original-width="915" ac:width="756" ac:src="https://example.com/image.png">
@@ -112,6 +164,19 @@ describe("convertConfluenceStorageToMarkdown", () => {
 
     expect(result).toEqual({
       markdown: "![image](https://example.com/image.png)",
+      warnings: [],
+    });
+  });
+
+  it("escapes Markdown image destinations when converting URL images", () => {
+    const result = convertConfluenceStorageToMarkdown(`
+      <ac:image ac:src="https://example.com/image draft).png">
+        <ri:url ri:value="https://example.com/image draft).png" />
+      </ac:image>
+    `);
+
+    expect(result).toEqual({
+      markdown: "![image](https://example.com/image%20draft\\).png)",
       warnings: [],
     });
   });
@@ -142,6 +207,57 @@ console.log(answer);]]></ac:plain-text-body>
     });
   });
 
+  it("uses safe code fences and sanitizes code macro languages", () => {
+    const result = convertConfluenceStorageToMarkdown([
+      '<ac:structured-macro ac:name="code">',
+      '<ac:parameter ac:name="language">ts\na\na`</ac:parameter>',
+      '<ac:plain-text-body><![CDATA[before',
+      '```ts',
+      'after]]></ac:plain-text-body>',
+      '</ac:structured-macro>',
+    ].join("\n"));
+
+    expect(result).toEqual({
+      markdown: "````tsaa\nbefore\n```ts\nafter\n````",
+      warnings: [],
+    });
+  });
+
+  it("uses safe code fences for pre blocks", () => {
+    const result = convertConfluenceStorageToMarkdown(["<pre>before", "```", "after</pre>"].join("\n"));
+
+    expect(result).toEqual({
+      markdown: "````\nbefore\n```\nafter\n````",
+      warnings: [],
+    });
+  });
+
+  it("uses safe inline code delimiters", () => {
+    const result = convertConfluenceStorageToMarkdown(`<p>Run <code>a \` b</code> now.</p>`);
+
+    expect(result).toEqual({
+      markdown: "Run ``a ` b`` now.",
+      warnings: [],
+    });
+  });
+
+  it("pads inline code when content edges could merge with delimiters", () => {
+    const result = convertConfluenceStorageToMarkdown([
+      "<p>",
+      "<code>`starts</code>",
+      " ",
+      "<code>ends`</code>",
+      " ",
+      "<code> spaced </code>",
+      "</p>",
+    ].join(""));
+
+    expect(result).toEqual({
+      markdown: "`` `starts `` `` ends` `` ` spaced `",
+      warnings: [],
+    });
+  });
+
   it("converts Jira macros to issue links when a resolver is provided", () => {
     const result = convertConfluenceStorageToMarkdown(
       `
@@ -164,7 +280,7 @@ console.log(answer);]]></ac:plain-text-body>
     });
   });
 
-  it("converts Confluence view-file macros to visible attachment viewer notes", () => {
+  it("keeps Confluence view-file macros as notes when no local attachment resolver is provided", () => {
     const result = convertConfluenceStorageToMarkdown(`
       <ac:structured-macro ac:name="view-file">
         <ac:parameter ac:name="name">
@@ -175,6 +291,29 @@ console.log(answer);]]></ac:plain-text-body>
 
     expect(result).toEqual({
       markdown: "> [!note] Confluence attachment viewer: nav-prototype_6.html",
+      warnings: [],
+    });
+  });
+
+  it("converts Confluence view-file macros to Obsidian links when a local attachment resolver is provided", () => {
+    const result = convertConfluenceStorageToMarkdown(
+      `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="nav-prototype_6.html" ri:version-at-save="2" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+      {
+        resolveAttachmentLinkTarget: (attachmentFileName) =>
+          attachmentFileName === "nav-prototype_6.html"
+            ? "confluence/Root/Home Navigation.assets/nav-prototype_6.html"
+            : null,
+      },
+    );
+
+    expect(result).toEqual({
+      markdown: "[[confluence/Root/Home Navigation.assets/nav-prototype_6.html|nav-prototype_6.html]]",
       warnings: [],
     });
   });

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { runPullTreeCommand, type PullTreeFetcher } from "./pullTreeCommand";
-import { calculateMarkdownBodyHash } from "../projects/pageMarkdown";
+import {
+  runPullTreeCommand,
+  type PullTreeFetcher,
+  type PullTreeHtmlAttachmentFetcher
+} from "./pullTreeCommand";
+import { calculateMarkdownBodyHash, createPageMarkdownContent, type PageHtmlAttachmentFile } from "../projects/pageMarkdown";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 
@@ -55,12 +59,24 @@ function createStorageMock(overrides: Partial<ProjectStorageAdapter> = {}): Stor
 
 function getMarkdownPageWrites(storage: StorageMock): Array<{ path: string; data: string }> {
   return storage.writtenFiles.filter(
-    (file) => !file.path.includes("/.confluence-sync/") && !file.path.startsWith("logs/")
+    (file) => file.path.endsWith(".md") && !file.path.includes("/.confluence-sync/") && !file.path.startsWith("logs/")
   );
 }
 
 function getPullReportWrites(storage: StorageMock): Array<{ path: string; data: string }> {
   return storage.writtenFiles.filter((file) => file.path.startsWith("logs/"));
+}
+
+const fetchNoHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
+  Promise.resolve({ htmlAttachmentsByPageId: new Map(), issues: [] });
+
+type RunPullTreeCommandInput = Parameters<typeof runPullTreeCommand>[0];
+
+function runPullTreeCommandForTest(input: RunPullTreeCommandInput): Promise<void> {
+  return runPullTreeCommand({
+    fetchHtmlAttachments: fetchNoHtmlAttachments,
+    ...input
+  });
 }
 
 describe("runPullTreeCommand", () => {
@@ -69,7 +85,7 @@ describe("runPullTreeCommand", () => {
     const fetchTree: PullTreeFetcher = () => Promise.reject(new Error("fetchTree should not be called"));
     const storage = createStorageMock();
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings({ apiToken: "" }),
       storage,
       fetchTree,
@@ -85,7 +101,7 @@ describe("runPullTreeCommand", () => {
     const fetchTree: PullTreeFetcher = () => Promise.reject(new Error("fetchTree should not be called"));
     const storage = createStorageMock();
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings({ confluenceBaseUrl: "", userEmail: "" }),
       storage,
       fetchTree,
@@ -133,7 +149,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings,
       storage,
       fetchTree,
@@ -155,7 +171,7 @@ describe("runPullTreeCommand", () => {
     const fetchTree: PullTreeFetcher = () => Promise.reject(new Error("fetchTree should not be called"));
     const storage = createStorageMock();
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings({ currentProject: null }),
       storage,
       fetchTree,
@@ -202,7 +218,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings({
         currentProject: {
           projectName: "Folder Root",
@@ -269,7 +285,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -330,7 +346,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -379,7 +395,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -414,7 +430,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -448,7 +464,7 @@ describe("runPullTreeCommand", () => {
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -500,7 +516,7 @@ ${existingBody}`)
       return Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -552,7 +568,7 @@ Local draft
       return Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -572,6 +588,320 @@ Local draft
     expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/Root.md]]");
     expect(getPullReportWrites(storage)[0]?.data).toContain("local-change");
     expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 1개, 변경 없음 0개"]);
+  });
+
+  it("downloads HTML attachments and links them from pulled Markdown", async () => {
+    const notices: string[] = [];
+    const fetchedAttachmentPageIds: string[] = [];
+    const downloadedFiles: PageHtmlAttachmentFile[] = [];
+    const storage = createStorageMock();
+    const rootPage = {
+      pageId: "100",
+      title: "Root",
+      parentId: null,
+      versionNumber: 1,
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="prototype.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      depth: 0,
+      childPosition: 0
+    };
+    const fetchTree: PullTreeFetcher = () =>
+      Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [], errors: [] });
+    const fetchHtmlAttachments: PullTreeHtmlAttachmentFetcher = (_settings, pages) => {
+      fetchedAttachmentPageIds.push(...pages.map((page) => page.pageId));
+
+      return Promise.resolve({
+        htmlAttachmentsByPageId: new Map([
+          [
+            "100",
+            [
+              {
+                id: "att-html",
+                pageId: "100",
+                pageTitle: "Root",
+                title: "prototype.html",
+                mediaType: "text/html",
+                fileSize: 1234,
+                downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+                versionNumber: 2
+              }
+            ]
+          ]
+        ]),
+        issues: []
+      });
+    };
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      fetchHtmlAttachments,
+      downloadHtmlAttachment: (_settings, file) => {
+        downloadedFiles.push(file);
+
+        return Promise.resolve({ ok: true, file: { ...file, html: "<html>prototype</html>" } });
+      },
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(fetchedAttachmentPageIds).toEqual(["100"]);
+    expect(downloadedFiles.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.assets/prototype.html"]);
+    expect(storage.writtenFiles).toContainEqual({
+      path: "confluence/Root/Root.assets/prototype.html",
+      data: "<html>prototype</html>"
+    });
+    expect(getMarkdownPageWrites(storage)[0]?.data).toContain(
+      "[[confluence/Root/Root.assets/prototype.html|prototype.html]]"
+    );
+    expect(notices).toEqual([
+      "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, HTML 첨부 1개"
+    ]);
+  });
+
+  it("keeps the viewer note and reports a warning when an HTML attachment download fails", async () => {
+    const notices: string[] = [];
+    const storage = createStorageMock();
+    const rootPage = {
+      pageId: "100",
+      title: "Root",
+      parentId: null,
+      versionNumber: 1,
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="prototype.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      depth: 0,
+      childPosition: 0
+    };
+    const fetchTree: PullTreeFetcher = () =>
+      Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
+    const fetchHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
+      Promise.resolve({
+        htmlAttachmentsByPageId: new Map([
+          [
+            "100",
+            [
+              {
+                id: "att-html",
+                pageId: "100",
+                pageTitle: "Root",
+                title: "prototype.html",
+                mediaType: "text/html",
+                fileSize: 1234,
+                downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+                versionNumber: 2
+              }
+            ]
+          ]
+        ]),
+        issues: []
+      });
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      fetchHtmlAttachments,
+      downloadHtmlAttachment: (_settings, file) =>
+        Promise.resolve({
+          ok: false,
+          issue: {
+            severity: "warning",
+            pageId: file.pageId,
+            title: file.pageTitle,
+            message: "네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다."
+          }
+        }),
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(storage.writtenFiles.some((file) => file.path === "confluence/Root/Root.assets/prototype.html")).toBe(false);
+    expect(getMarkdownPageWrites(storage)[0]?.data).toContain("> [!note] Confluence attachment viewer: prototype.html");
+    expect(getMarkdownPageWrites(storage)[0]?.data).not.toContain(
+      "[[confluence/Root/Root.assets/prototype.html|prototype.html]]"
+    );
+    expect(getPullReportWrites(storage)[0]?.data).toContain("- 변환 경고: 1개");
+    expect(getPullReportWrites(storage)[0]?.data).toContain(
+      'message="네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다."'
+    );
+    expect(notices).toEqual([
+      "Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 0개, 변환 경고 1개"
+    ]);
+  });
+
+  it("does not write HTML attachments for Markdown files skipped because of local changes", async () => {
+    const notices: string[] = [];
+    const downloadedFiles: PageHtmlAttachmentFile[] = [];
+    const previousPulledBody = "Remote v1\n";
+    const storage = createStorageMock({
+      list: (path) =>
+        Promise.resolve(
+          path === "confluence/Root" ? { files: ["confluence/Root/Root.md"], folders: [] } : { files: [], folders: [] }
+        ),
+      read: () =>
+        Promise.resolve(`---
+confluencePageId: "100"
+confluenceVersion: 1
+confluenceContentHash: "${calculateMarkdownBodyHash(previousPulledBody)}"
+---
+
+Local draft
+`)
+    });
+    const rootPage = {
+      pageId: "100",
+      title: "Root",
+      parentId: null,
+      versionNumber: 2,
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="prototype.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      depth: 0,
+      childPosition: 0
+    };
+    const fetchTree: PullTreeFetcher = () =>
+      Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
+    const fetchHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
+      Promise.resolve({
+        htmlAttachmentsByPageId: new Map([
+          [
+            "100",
+            [
+              {
+                id: "att-html",
+                pageId: "100",
+                pageTitle: "Root",
+                title: "prototype.html",
+                mediaType: "text/html",
+                fileSize: 1234,
+                downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+                versionNumber: 2
+              }
+            ]
+          ]
+        ]),
+        issues: []
+      });
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      fetchHtmlAttachments,
+      downloadHtmlAttachment: (_settings, file) => {
+        downloadedFiles.push(file);
+
+        return Promise.resolve({
+          ok: false,
+          issue: {
+            severity: "warning",
+            pageId: file.pageId,
+            title: file.pageTitle,
+            message: "스킵 페이지의 HTML 첨부는 다운로드하면 안 됩니다."
+          }
+        });
+      },
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(downloadedFiles).toEqual([]);
+    expect(getMarkdownPageWrites(storage)).toEqual([]);
+    expect(storage.writtenFiles.some((file) => file.path === "confluence/Root/Root.assets/prototype.html")).toBe(false);
+    expect(getPullReportWrites(storage)[0]?.data).toContain("- 변환 경고: 0개");
+    expect(getPullReportWrites(storage)[0]?.data).not.toContain("스킵 페이지의 HTML 첨부는 다운로드하면 안 됩니다.");
+    expect(notices).toEqual(["Pull 완료: 추가 0개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 1개, 변경 없음 0개"]);
+  });
+
+  it("downloads and writes HTML attachments for unchanged Markdown pages", async () => {
+    const notices: string[] = [];
+    const downloadedFiles: PageHtmlAttachmentFile[] = [];
+    const unchangedMarkdown = createPageMarkdownContent({
+      pageId: "100",
+      title: "Root",
+      versionNumber: 2,
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      parentId: null,
+      bodyMarkdown: "Remote body\n"
+    });
+    const storage = createStorageMock({
+      list: (path) =>
+        Promise.resolve(
+          path === "confluence/Root" ? { files: ["confluence/Root/Root.md"], folders: [] } : { files: [], folders: [] }
+        ),
+      read: () => Promise.resolve(unchangedMarkdown)
+    });
+    const rootPage = {
+      pageId: "100",
+      title: "Root",
+      parentId: null,
+      versionNumber: 2,
+      bodyStorageValue: "<p>Remote body</p>",
+      sourceUrl: "https://selta.atlassian.net/wiki/spaces/SPACE/pages/100/Root",
+      depth: 0,
+      childPosition: 0
+    };
+    const fetchTree: PullTreeFetcher = () =>
+      Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
+    const fetchHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
+      Promise.resolve({
+        htmlAttachmentsByPageId: new Map([
+          [
+            "100",
+            [
+              {
+                id: "att-html",
+                pageId: "100",
+                pageTitle: "Root",
+                title: "prototype.html",
+                mediaType: "text/html",
+                fileSize: 1234,
+                downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+                versionNumber: 2
+              }
+            ]
+          ]
+        ]),
+        issues: []
+      });
+
+    await runPullTreeCommand({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      fetchHtmlAttachments,
+      downloadHtmlAttachment: (_settings, file) => {
+        downloadedFiles.push(file);
+
+        return Promise.resolve({ ok: true, file: { ...file, html: "<html>prototype</html>" } });
+      },
+      showNotice: (message) => notices.push(message)
+    });
+
+    expect(downloadedFiles.map((file) => file.vaultPath)).toEqual(["confluence/Root/Root.assets/prototype.html"]);
+    expect(storage.writtenFiles).toContainEqual({
+      path: "confluence/Root/Root.assets/prototype.html",
+      data: "<html>prototype</html>"
+    });
+    expect(getMarkdownPageWrites(storage)).toEqual([]);
+    expect(notices).toEqual([
+      "Pull 완료: 추가 0개, 갱신 0개, 안전 삭제 0개, 로컬 수정 스킵 0개, 변경 없음 1개, HTML 첨부 1개"
+    ]);
   });
 
   it("Force Pull Tree를 승인하면 로컬 수정된 기존 파일을 원격 본문으로 덮어쓴다", async () => {
@@ -611,7 +941,7 @@ Local draft
       return Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -674,7 +1004,7 @@ Local draft
       return Promise.resolve({ ok: true, root: { ...rootPage, children: [] }, pages: [rootPage], errors: [] });
     });
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -694,6 +1024,52 @@ Local draft
     expect(fetchTree).not.toHaveBeenCalled();
     expect(openedReports).toEqual(["logs/latest.md"]);
     expect(notices).toEqual(["Force Pull을 취소했습니다. 변경된 로컬 파일 목록을 리포트로 남겼습니다."]);
+  });
+
+  it("Force Pull Tree cancel report includes legacy files without content hash", async () => {
+    const notices: string[] = [];
+    const openedReports: string[] = [];
+    const storage = createStorageMock({
+      list: (path) =>
+        Promise.resolve(
+          path === "confluence/Root"
+            ? { files: ["confluence/Root/Legacy.md"], folders: [] }
+            : { files: [], folders: [] }
+        ),
+      read: () =>
+        Promise.resolve(`---
+confluencePageId: "100"
+confluenceVersion: 1
+---
+
+Legacy local body
+`)
+    });
+    const fetchTree = vi.fn<PullTreeFetcher>(() =>
+      Promise.reject(new Error("fetchTree should not be called when Force Pull is cancelled"))
+    );
+
+    await runPullTreeCommandForTest({
+      settings: createSettings(),
+      storage,
+      fetchTree,
+      mode: "force",
+      confirmForcePull: (message) => {
+        notices.push(message);
+        return false;
+      },
+      showNotice: (message) => notices.push(message),
+      openReport: (path) => {
+        openedReports.push(path);
+        return Promise.resolve();
+      }
+    });
+
+    expect(notices[0]).toBe("로컬의 변경사항이 모두 취소됩니다. 정말 실행하시겠습니까?\n\n로컬 변경사항: 1건");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("- 변경된 로컬 파일: 1개");
+    expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/Legacy.md]]");
+    expect(fetchTree).not.toHaveBeenCalled();
+    expect(openedReports).toEqual(["logs/latest.md"]);
   });
 
   it("Force Pull Tree overwrites local changes without creating detached current-page backups", async () => {
@@ -716,7 +1092,7 @@ ${localBody}`;
         })
     });
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       mode: "force",
@@ -797,7 +1173,7 @@ ${existingBody}`)
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -842,7 +1218,7 @@ ${existingBody}`)
       });
     };
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -861,7 +1237,7 @@ ${existingBody}`)
       message: "네트워크 오류로 Confluence 페이지 트리를 조회할 수 없습니다."
     });
 
-    await runPullTreeCommand({
+    await runPullTreeCommandForTest({
       settings: createSettings(),
       storage,
       fetchTree,
@@ -880,7 +1256,7 @@ ${existingBody}`)
     const fetchTree: PullTreeFetcher = () => Promise.reject(unexpectedError);
 
     try {
-      await runPullTreeCommand({
+      await runPullTreeCommandForTest({
         settings: createSettings(),
         storage,
         fetchTree,

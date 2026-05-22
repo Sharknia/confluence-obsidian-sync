@@ -5,10 +5,14 @@ export const createObsidianRequestTransport: ConfluenceRequestTransport = async 
   const response = (await requestUrl({ ...request, throw: false })) as {
     status: number;
     json: unknown;
+    text?: string;
+    arrayBuffer?: ArrayBuffer;
   };
 
   return {
     status: response.status,
-    json: response.json
+    json: response.json,
+    text: response.text,
+    arrayBuffer: response.arrayBuffer
   };
 };

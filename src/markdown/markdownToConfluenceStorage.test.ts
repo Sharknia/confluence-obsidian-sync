@@ -70,6 +70,15 @@ describe("convertMarkdownToConfluenceStorage", () => {
     });
   });
 
+  it("blocks Pull-generated local HTML attachment wiki links during Push", () => {
+    expect(
+      convertMarkdownToConfluenceStorage("[[confluence/Root/Root.assets/prototype.html|prototype.html]]\n"),
+    ).toEqual({
+      ok: false,
+      message: "Obsidian wiki link는 MVP Push에서 지원하지 않습니다. 일반 Markdown 링크로 바꾼 뒤 다시 시도하세요.",
+    });
+  });
+
   it("blocks embedded images because attachment round-trip is outside MVP Push", () => {
     expect(convertMarkdownToConfluenceStorage("![Diagram](diagram.png)\n")).toEqual({
       ok: false,

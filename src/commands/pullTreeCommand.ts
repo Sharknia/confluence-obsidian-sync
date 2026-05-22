@@ -1,14 +1,24 @@
 import { getMissingConfluenceConnectionFields, type RequiredConfluenceConnectionField } from "../confluence/authentication";
 import {
+  downloadConfluenceHtmlAttachment,
+  fetchConfluencePageHtmlAttachments,
+  type ConfluenceHtmlAttachment,
+  type ConfluenceHtmlAttachmentIssue
+} from "../confluence/attachments";
+import {
   fetchConfluenceRootContentTree,
   type ConfluencePageTreeError,
+  type ConfluencePageTreeNode,
+  type ConfluencePageTreePage,
   type ConfluenceRootContentTreeResult,
   type ConfluenceRootContentType
 } from "../confluence/pageTree";
+import { writeHtmlAttachmentFiles, type HtmlAttachmentFileToWrite } from "../projects/htmlAttachmentStorage";
 import {
   buildPageMarkdownFiles,
   calculateMarkdownBodyHash,
   parsePageMarkdownMetadata,
+  type PageHtmlAttachmentFile,
   type PageMarkdownConversionIssue,
   type PageMarkdownFile
 } from "../projects/pageMarkdown";
@@ -28,10 +38,27 @@ export type PullTreeFetcher = (
   rootContentId: string
 ) => Promise<ConfluenceRootContentTreeResult>;
 
+export interface PullTreeHtmlAttachmentFetchResult {
+  htmlAttachmentsByPageId: Map<string, ConfluenceHtmlAttachment[]>;
+  issues: PageMarkdownConversionIssue[];
+}
+
+export type PullTreeHtmlAttachmentFetcher = (
+  settings: ConfluenceSyncSettings,
+  pages: ConfluencePageTreePage[]
+) => Promise<PullTreeHtmlAttachmentFetchResult>;
+
+export type PullTreeHtmlAttachmentDownloader = (
+  settings: ConfluenceSyncSettings,
+  file: PageHtmlAttachmentFile
+) => Promise<{ ok: true; file: HtmlAttachmentFileToWrite } | { ok: false; issue: PageMarkdownConversionIssue }>;
+
 export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
   storage: ProjectStorageAdapter;
   fetchTree?: PullTreeFetcher;
+  fetchHtmlAttachments?: PullTreeHtmlAttachmentFetcher;
+  downloadHtmlAttachment?: PullTreeHtmlAttachmentDownloader;
   ensureCurrentProject?: PullTreeProjectEnsurer;
   mode?: "normal" | "force";
   confirmForcePull?: (message: string) => boolean;
@@ -70,10 +97,56 @@ const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType
   return fetchConfluenceRootContentTree(settings, rootContentType, rootContentId, createObsidianRequestTransport);
 };
 
+const defaultPullTreeHtmlAttachmentFetcher: PullTreeHtmlAttachmentFetcher = async (settings, pages) => {
+  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
+  const htmlAttachmentsByPageId = new Map<string, ConfluenceHtmlAttachment[]>();
+  const issues: PageMarkdownConversionIssue[] = [];
+
+  for (const page of pages) {
+    const result = await fetchConfluencePageHtmlAttachments(
+      settings,
+      page.pageId,
+      page.title,
+      createObsidianRequestTransport
+    );
+
+    if (result.attachments.length > 0) {
+      htmlAttachmentsByPageId.set(page.pageId, result.attachments);
+    }
+
+    issues.push(...result.issues.map(toAttachmentConversionIssue));
+  }
+
+  return { htmlAttachmentsByPageId, issues };
+};
+
+const defaultPullTreeHtmlAttachmentDownloader: PullTreeHtmlAttachmentDownloader = async (settings, file) => {
+  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
+  const attachment: ConfluenceHtmlAttachment = {
+    id: file.attachmentId,
+    pageId: file.pageId,
+    pageTitle: file.pageTitle,
+    title: file.attachmentTitle,
+    mediaType: "text/html",
+    fileSize: null,
+    downloadLink: file.downloadLink,
+    versionNumber: null
+  };
+  const result = await downloadConfluenceHtmlAttachment(settings, attachment, createObsidianRequestTransport);
+
+  if (!result.ok) {
+    return { ok: false, issue: toAttachmentConversionIssue(result.issue) };
+  }
+
+  return { ok: true, file: { ...file, html: result.html } };
+};
+
 export async function runPullTreeCommand({
   settings,
   storage,
   fetchTree = defaultPullTreeFetcher,
+  fetchHtmlAttachments = defaultPullTreeHtmlAttachmentFetcher,
+  downloadHtmlAttachment = defaultPullTreeHtmlAttachmentDownloader,
   ensureCurrentProject,
   mode = "normal",
   confirmForcePull,
@@ -163,6 +236,7 @@ export async function runPullTreeCommand({
     let syncPlan: ReturnType<typeof createPullSyncPlan>;
     let conversionWarningCount = 0;
     let conversionFailureCount = 0;
+    let htmlAttachmentCount = 0;
 
     try {
       if (localMarkdownFilesResult === null) {
@@ -179,15 +253,67 @@ export async function runPullTreeCommand({
       }
 
       const localMarkdownFiles = localMarkdownFilesResult;
+      const htmlAttachmentFetchResult = await fetchHtmlAttachments(
+        settings,
+        collectPagesForHtmlAttachmentFetch(result.root, result.pages)
+      );
+      const markdownPlanBuildResult = await buildPageMarkdownFiles({
+        projectRootPath: currentProject.localFolderPath,
+        root: result.root,
+        pages: result.pages,
+        existingPagePathById: buildExistingPagePathById(localMarkdownFiles.files),
+        pathExists: (path) => storage.exists(path),
+        readExistingFile: (path) => storage.read(path),
+        htmlAttachmentsByPageId: htmlAttachmentFetchResult.htmlAttachmentsByPageId
+      });
+      const preliminarySyncPlan = createPullSyncPlan(
+        {
+          projectRootPath: currentProject.localFolderPath,
+          safeDeleteRootPath,
+          remoteFiles: markdownPlanBuildResult.files,
+          localFiles: localMarkdownFiles.files
+        },
+        { forceOverwriteLocalChanges: mode === "force" }
+      );
+      const preliminarySkippedLocalChangePageIds = new Set(
+        preliminarySyncPlan.skippedLocalChanges.map((file) => file.pageId)
+      );
+      const eligibleHtmlAttachmentPageIds = new Set(
+        markdownPlanBuildResult.files
+          .map((file) => file.pageId)
+          .filter((pageId) => !preliminarySkippedLocalChangePageIds.has(pageId))
+      );
+      const htmlAttachmentFilesToWrite: HtmlAttachmentFileToWrite[] = [];
+      const htmlAttachmentDownloadIssues: PageMarkdownConversionIssue[] = [];
+
+      for (const file of markdownPlanBuildResult.htmlAttachmentFiles.filter(
+        (plannedFile) => eligibleHtmlAttachmentPageIds.has(plannedFile.pageId)
+      )) {
+        const downloadResult = await downloadHtmlAttachment(settings, file);
+
+        if (downloadResult.ok) {
+          htmlAttachmentFilesToWrite.push(downloadResult.file);
+        } else {
+          htmlAttachmentDownloadIssues.push(downloadResult.issue);
+        }
+      }
+
       const markdownBuildResult = await buildPageMarkdownFiles({
         projectRootPath: currentProject.localFolderPath,
         root: result.root,
         pages: result.pages,
         existingPagePathById: buildExistingPagePathById(localMarkdownFiles.files),
         pathExists: (path) => storage.exists(path),
-        readExistingFile: (path) => storage.read(path)
+        readExistingFile: (path) => storage.read(path),
+        htmlAttachmentsByPageId: htmlAttachmentFetchResult.htmlAttachmentsByPageId,
+        availableHtmlAttachmentFilesByPageId: buildAvailableHtmlAttachmentFilesByPageId(htmlAttachmentFilesToWrite)
       });
       markdownFiles = markdownBuildResult.files;
+      const allConversionIssues = [
+        ...markdownBuildResult.conversionIssues,
+        ...htmlAttachmentFetchResult.issues,
+        ...htmlAttachmentDownloadIssues
+      ];
 
       syncPlan = createPullSyncPlan(
         {
@@ -199,11 +325,23 @@ export async function runPullTreeCommand({
         { forceOverwriteLocalChanges: mode === "force" }
       );
 
+      const writableHtmlAttachmentFiles = htmlAttachmentFilesToWrite.filter(
+        (file) => eligibleHtmlAttachmentPageIds.has(file.pageId)
+      );
+      const htmlWriteResult = await writeHtmlAttachmentFiles(storage, writableHtmlAttachmentFiles);
+
+      if (!htmlWriteResult.ok) {
+        showNotice(htmlWriteResult.message);
+        return;
+      }
+
+      htmlAttachmentCount = htmlWriteResult.writtenFileCount;
+
       writeResult = await applyPullSyncPlan(storage, syncPlan);
-      conversionWarningCount = markdownBuildResult.conversionIssues.filter(
+      conversionWarningCount = allConversionIssues.filter(
         (issue) => issue.severity === "warning"
       ).length;
-      conversionFailureCount = markdownBuildResult.conversionIssues.filter(
+      conversionFailureCount = allConversionIssues.filter(
         (issue) => issue.severity === "error"
       ).length;
 
@@ -216,7 +354,7 @@ export async function runPullTreeCommand({
           syncPlan,
           fetchFailureCount: result.errors.length,
           fetchFailures: result.errors,
-          conversionIssues: markdownBuildResult.conversionIssues,
+          conversionIssues: allConversionIssues,
           conversionWarningCount,
           conversionFailureCount
         });
@@ -248,7 +386,8 @@ export async function runPullTreeCommand({
       )}, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
         result.errors.length,
         conversionWarningCount,
-        conversionFailureCount
+        conversionFailureCount,
+        htmlAttachmentCount
       )}`
     );
   } catch (error) {
@@ -311,9 +450,14 @@ function buildForceOverwriteNoticePart(mode: "normal" | "force", overwrittenCoun
 function buildSuccessNoticeSuffix(
   fetchFailureCount: number,
   conversionWarningCount: number,
-  conversionFailureCount: number
+  conversionFailureCount: number,
+  htmlAttachmentCount = 0
 ): string {
   const suffixes: string[] = [];
+
+  if (htmlAttachmentCount > 0) {
+    suffixes.push(`HTML 첨부 ${htmlAttachmentCount}개`);
+  }
 
   if (fetchFailureCount > 0) {
     suffixes.push(`조회 실패 ${fetchFailureCount}개`);
@@ -375,6 +519,71 @@ function buildExistingPagePathById(localMarkdownFiles: Array<{ vaultPath: string
   }
 
   return existingPagePathById;
+}
+
+function collectPagesForHtmlAttachmentFetch(
+  root: ConfluenceRootContentTreeResult["root"],
+  pages: ConfluencePageTreePage[]
+): ConfluencePageTreePage[] {
+  const pagesById = new Map<string, ConfluencePageTreePage>();
+
+  if (isConfluencePageTreeNode(root)) {
+    pagesById.set(root.pageId, toConfluencePageTreePage(root));
+  }
+
+  for (const page of pages) {
+    pagesById.set(page.pageId, page);
+  }
+
+  return Array.from(pagesById.values());
+}
+
+function isConfluencePageTreeNode(root: ConfluenceRootContentTreeResult["root"]): root is ConfluencePageTreeNode {
+  return "pageId" in root;
+}
+
+function toConfluencePageTreePage(page: ConfluencePageTreePage): ConfluencePageTreePage {
+  return {
+    pageId: page.pageId,
+    title: page.title,
+    parentId: page.parentId,
+    versionNumber: page.versionNumber,
+    bodyStorageValue: page.bodyStorageValue,
+    sourceUrl: page.sourceUrl,
+    depth: page.depth,
+    childPosition: page.childPosition
+  };
+}
+
+function buildAvailableHtmlAttachmentFilesByPageId(
+  files: HtmlAttachmentFileToWrite[]
+): Map<string, PageHtmlAttachmentFile[]> {
+  const filesByPageId = new Map<string, PageHtmlAttachmentFile[]>();
+
+  for (const file of files) {
+    const pageFiles = filesByPageId.get(file.pageId) ?? [];
+    pageFiles.push({
+      attachmentFileId: file.attachmentFileId,
+      pageId: file.pageId,
+      pageTitle: file.pageTitle,
+      attachmentId: file.attachmentId,
+      attachmentTitle: file.attachmentTitle,
+      vaultPath: file.vaultPath,
+      downloadLink: file.downloadLink
+    });
+    filesByPageId.set(file.pageId, pageFiles);
+  }
+
+  return filesByPageId;
+}
+
+function toAttachmentConversionIssue(issue: ConfluenceHtmlAttachmentIssue): PageMarkdownConversionIssue {
+  return {
+    severity: "warning",
+    pageId: issue.pageId,
+    title: issue.pageTitle,
+    message: issue.message
+  };
 }
 
 interface PullReportInput {
@@ -531,11 +740,11 @@ function collectChangedLocalMarkdownFiles(
   for (const file of localMarkdownFiles) {
     const metadata = parsePageMarkdownMetadata(file.content);
 
-    if (metadata === null || metadata.contentHash === null) {
+    if (metadata === null) {
       continue;
     }
 
-    if (calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash) {
+    if (metadata.contentHash === null || calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash) {
       changedLocalFiles.push({
         vaultPath: file.vaultPath,
         pageId: metadata.pageId,

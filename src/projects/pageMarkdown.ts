@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import type { ConfluenceHtmlAttachment } from "../confluence/attachments";
 import type {
   ConfluenceFolderContentTreeNode,
   ConfluencePageTreeNode,
@@ -11,6 +12,7 @@ import {
 
 const MAX_SAFE_FILE_BASE_NAME_LENGTH = 120;
 const MARKDOWN_FILE_EXTENSION = ".md";
+const HTML_FILE_EXTENSION = ".html";
 const UNSAFE_MARKDOWN_FILE_NAME_CHARACTERS = /[<>:"/\\|?*]+/gu;
 const TRAILING_DOT_OR_SPACE = /[. ]+$/u;
 const WINDOWS_RESERVED_FILE_NAMES = new Set([
@@ -46,6 +48,16 @@ export interface PageMarkdownFile {
   warnings: ConfluenceStorageToMarkdownWarning[];
 }
 
+export interface PageHtmlAttachmentFile {
+  attachmentFileId: string;
+  pageId: string;
+  pageTitle: string;
+  attachmentId: string;
+  attachmentTitle: string;
+  vaultPath: string;
+  downloadLink: string;
+}
+
 export interface PageMarkdownConversionIssue {
   severity: "warning" | "error";
   pageId: string;
@@ -56,6 +68,7 @@ export interface PageMarkdownConversionIssue {
 export interface BuildPageMarkdownFilesResult {
   files: PageMarkdownFile[];
   conversionIssues: PageMarkdownConversionIssue[];
+  htmlAttachmentFiles: PageHtmlAttachmentFile[];
 }
 
 export type StorageToMarkdownConverter = typeof convertConfluenceStorageToMarkdown;
@@ -75,6 +88,8 @@ export interface BuildPageMarkdownFilesInput {
   pathExists: (path: string) => Promise<boolean>;
   readExistingFile?: (path: string) => Promise<string>;
   convertStorageToMarkdown?: StorageToMarkdownConverter;
+  htmlAttachmentsByPageId?: ReadonlyMap<string, readonly ConfluenceHtmlAttachment[]>;
+  availableHtmlAttachmentFilesByPageId?: ReadonlyMap<string, readonly PageHtmlAttachmentFile[]>;
 }
 
 export interface UpdatePageMarkdownFrontmatterAfterPushInput {
@@ -225,6 +240,14 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
     pagesToWrite.map((placement) => placement.page),
     pathAssignments,
   );
+  const htmlAttachmentFilesByPageId = buildHtmlAttachmentFilesByPageId(
+    input.htmlAttachmentsByPageId,
+    pathAssignments,
+  );
+  const htmlAttachmentFiles = Array.from(htmlAttachmentFilesByPageId.values()).flat();
+  const availableHtmlAttachmentFilesByPageId = buildAvailableHtmlAttachmentFilesByPageId(
+    input.availableHtmlAttachmentFilesByPageId,
+  );
 
   for (const { page } of pagesToWrite) {
     const vaultPath = pathAssignments.get(page.pageId);
@@ -239,6 +262,12 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
       markdownConversion = convertStorageToMarkdown(page.bodyStorageValue, {
         resolvePageLinkTarget: (contentTitle) => linkTargetsByTitle.get(contentTitle) ?? contentTitle,
         resolveJiraIssueUrl: (issueKey) => createJiraIssueUrl(page.sourceUrl, issueKey),
+        resolveAttachmentLinkTarget: (attachmentFileName) => {
+          const availableHtmlAttachmentFiles = availableHtmlAttachmentFilesByPageId.get(page.pageId) ?? [];
+          return availableHtmlAttachmentFiles.find(
+            (file) => createAttachmentLookupKey(file.attachmentTitle) === createAttachmentLookupKey(attachmentFileName),
+          )?.vaultPath ?? null;
+        },
       });
     } catch (error) {
       const detail = error instanceof Error && error.message.length > 0 ? error.message : "알 수 없는 변환 오류";
@@ -279,7 +308,80 @@ export async function buildPageMarkdownFiles(input: BuildPageMarkdownFilesInput)
     });
   }
 
-  return { files, conversionIssues };
+  return { files, conversionIssues, htmlAttachmentFiles };
+}
+
+function buildHtmlAttachmentFilesByPageId(
+  htmlAttachmentsByPageId: ReadonlyMap<string, readonly ConfluenceHtmlAttachment[]> | undefined,
+  pathAssignments: ReadonlyMap<string, string>,
+): Map<string, PageHtmlAttachmentFile[]> {
+  const htmlAttachmentFilesByPageId = new Map<string, PageHtmlAttachmentFile[]>();
+
+  for (const [pageId, attachments] of htmlAttachmentsByPageId ?? []) {
+    const pageVaultPath = pathAssignments.get(pageId);
+
+    if (pageVaultPath === undefined) {
+      continue;
+    }
+
+    const reservedPathKeys = new Set<string>();
+    const htmlAttachmentFiles = attachments.map((attachment, index) => ({
+      attachmentFileId: `${attachment.id}::${index}`,
+      pageId: attachment.pageId,
+      pageTitle: attachment.pageTitle,
+      attachmentId: attachment.id,
+      attachmentTitle: attachment.title,
+      vaultPath: createAvailableHtmlAttachmentVaultPath(pageVaultPath, attachment, reservedPathKeys),
+      downloadLink: attachment.downloadLink,
+    }));
+
+    htmlAttachmentFilesByPageId.set(pageId, htmlAttachmentFiles);
+  }
+
+  return htmlAttachmentFilesByPageId;
+}
+
+function buildAvailableHtmlAttachmentFilesByPageId(
+  availableHtmlAttachmentFilesByPageId: ReadonlyMap<string, readonly PageHtmlAttachmentFile[]> | undefined,
+): Map<string, PageHtmlAttachmentFile[]> {
+  return new Map(
+    Array.from(availableHtmlAttachmentFilesByPageId ?? [], ([pageId, files]) => [pageId, Array.from(files)]),
+  );
+}
+
+function createAvailableHtmlAttachmentVaultPath(
+  pageVaultPath: string,
+  attachment: ConfluenceHtmlAttachment,
+  reservedPathKeys: Set<string>,
+): string {
+  const assetsFolderPath = `${removeMarkdownExtension(pageVaultPath)}.assets`;
+  const safeHtmlFileName = createSafeHtmlAttachmentFileName(attachment.title, attachment.id);
+  const safeHtmlBaseName = safeHtmlFileName.slice(0, -HTML_FILE_EXTENSION.length);
+  let collisionIndex = 0;
+
+  while (true) {
+    const suffix = collisionIndex === 0 ? "" : ` (${collisionIndex})`;
+    const candidatePath = joinVaultPath(assetsFolderPath, `${safeHtmlBaseName}${suffix}${HTML_FILE_EXTENSION}`);
+    const candidatePathKey = createReservedPathKey(candidatePath);
+
+    if (!reservedPathKeys.has(candidatePathKey)) {
+      reservedPathKeys.add(candidatePathKey);
+      return candidatePath;
+    }
+
+    collisionIndex += 1;
+  }
+}
+
+function createSafeHtmlAttachmentFileName(attachmentTitle: string, attachmentId: string): string {
+  const rawBaseName = attachmentTitle.toLocaleLowerCase("en-US").endsWith(HTML_FILE_EXTENSION)
+    ? attachmentTitle.slice(0, -HTML_FILE_EXTENSION.length)
+    : attachmentTitle;
+  return `${createSafeFileBaseName(rawBaseName, `confluence-attachment-${createSafePageIdSegment(attachmentId)}`)}${HTML_FILE_EXTENSION}`;
+}
+
+function createAttachmentLookupKey(attachmentTitle: string): string {
+  return attachmentTitle.toLocaleLowerCase("en-US");
 }
 
 function toConversionWarningMessage(warning: ConfluenceStorageToMarkdownWarning): string {

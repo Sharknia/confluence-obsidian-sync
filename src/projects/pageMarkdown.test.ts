@@ -58,6 +58,252 @@ describe("createSafeMarkdownFileName", () => {
 });
 
 describe("buildPageMarkdownFiles", () => {
+  it("plans colocated HTML attachment files and links only available files", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "Home Navigation 기획",
+      bodyStorageValue: `
+        <p>프로토타입:</p>
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="nav-prototype_6.html" ri:version-at-save="2" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+    });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+    const plannedHtmlAttachmentFile = {
+      attachmentFileId: "att-html::0",
+      pageId: "100",
+      pageTitle: "Home Navigation 기획",
+      attachmentId: "att-html",
+      attachmentTitle: "nav-prototype_6.html",
+      vaultPath: "confluence/Root/Home Navigation 기획.assets/nav-prototype_6.html",
+      downloadLink: "/wiki/download/attachments/100/nav-prototype_6.html?version=2",
+    };
+    const htmlAttachmentsByPageId = new Map([
+      [
+        "100",
+        [
+          {
+            id: "att-html",
+            pageId: "100",
+            pageTitle: "Home Navigation 기획",
+            title: "nav-prototype_6.html",
+            mediaType: "text/html",
+            fileSize: 1234,
+            downloadLink: "/wiki/download/attachments/100/nav-prototype_6.html?version=2",
+            versionNumber: 2,
+          },
+        ],
+      ],
+    ]);
+    const availableHtmlAttachmentFilesByPageId = new Map([["100", [plannedHtmlAttachmentFile]]]);
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      htmlAttachmentsByPageId,
+      availableHtmlAttachmentFilesByPageId,
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.htmlAttachmentFiles).toEqual([plannedHtmlAttachmentFile]);
+    expect(result.files[0]?.content).toContain(
+      "[[confluence/Root/Home Navigation 기획.assets/nav-prototype_6.html|nav-prototype_6.html]]",
+    );
+  });
+
+  it("keeps the attachment viewer note when an HTML attachment has not been saved locally", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "Root",
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="prototype.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+    });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+    const htmlAttachmentsByPageId = new Map([
+      [
+        "100",
+        [
+          {
+            id: "att-html",
+            pageId: "100",
+            pageTitle: "Root",
+            title: "prototype.html",
+            mediaType: "text/html",
+            fileSize: 1234,
+            downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+            versionNumber: 2,
+          },
+        ],
+      ],
+    ]);
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      htmlAttachmentsByPageId,
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.htmlAttachmentFiles).toEqual([
+      {
+        pageId: "100",
+        pageTitle: "Root",
+        attachmentFileId: "att-html::0",
+        attachmentId: "att-html",
+        attachmentTitle: "prototype.html",
+        vaultPath: "confluence/Root/Root.assets/prototype.html",
+        downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+      },
+    ]);
+    expect(result.files[0]?.content).toContain("> [!note] Confluence attachment viewer: prototype.html");
+    expect(result.files[0]?.content).not.toContain("[[confluence/Root/Root.assets/prototype.html|prototype.html]]");
+  });
+
+  it("keeps the attachment viewer note when the referenced HTML attachment is not in metadata", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "Root",
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="missing.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+    });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      htmlAttachmentsByPageId: new Map(),
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.htmlAttachmentFiles).toEqual([]);
+    expect(result.files[0]?.content).toContain("> [!note] Confluence attachment viewer: missing.html");
+  });
+
+  it("uses available HTML attachment paths for links while keeping planned paths from metadata", async () => {
+    const rootPage = createPage({
+      pageId: "100",
+      title: "Root",
+      bodyStorageValue: `
+        <ac:structured-macro ac:name="view-file">
+          <ac:parameter ac:name="name">
+            <ri:attachment ri:filename="prototype.html" />
+          </ac:parameter>
+        </ac:structured-macro>
+      `,
+    });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+    const availableHtmlAttachmentFile = {
+      attachmentFileId: "att-html::0",
+      pageId: "100",
+      pageTitle: "Root",
+      attachmentId: "att-html",
+      attachmentTitle: "prototype.html",
+      vaultPath: "confluence/Root/.attachments/prototype.saved.html",
+      downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+    };
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      htmlAttachmentsByPageId: new Map([
+        [
+          "100",
+          [
+            {
+              id: "att-html",
+              pageId: "100",
+              pageTitle: "Root",
+              title: "prototype.html",
+              mediaType: "text/html",
+              fileSize: 1234,
+              downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+              versionNumber: 2,
+            },
+          ],
+        ],
+      ]),
+      availableHtmlAttachmentFilesByPageId: new Map([["100", [availableHtmlAttachmentFile]]]),
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.htmlAttachmentFiles).toEqual([
+      {
+        attachmentFileId: "att-html::0",
+        pageId: "100",
+        pageTitle: "Root",
+        attachmentId: "att-html",
+        attachmentTitle: "prototype.html",
+        vaultPath: "confluence/Root/Root.assets/prototype.html",
+        downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+      },
+    ]);
+    expect(result.files[0]?.content).toContain(
+      "[[confluence/Root/.attachments/prototype.saved.html|prototype.html]]",
+    );
+    expect(result.files[0]?.content).not.toContain("[[confluence/Root/Root.assets/prototype.html|prototype.html]]");
+  });
+
+  it("adds case-insensitive collision suffixes for duplicate HTML attachment titles on the same page", async () => {
+    const rootPage = createPage({ pageId: "100", title: "Root" });
+    const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
+
+    const result = await buildPageMarkdownFiles({
+      projectRootPath: "confluence/Root",
+      root,
+      pages: [rootPage],
+      htmlAttachmentsByPageId: new Map([
+        [
+          "100",
+          [
+            {
+              id: "att-html-a",
+              pageId: "100",
+              pageTitle: "Root",
+              title: "file.html",
+              mediaType: "text/html",
+              fileSize: 1234,
+              downloadLink: "/wiki/download/attachments/100/file.html?version=1",
+              versionNumber: 1,
+            },
+            {
+              id: "att-html-b",
+              pageId: "100",
+              pageTitle: "Root",
+              title: "FILE.html",
+              mediaType: "text/html",
+              fileSize: 5678,
+              downloadLink: "/wiki/download/attachments/100/FILE.html?version=1",
+              versionNumber: 1,
+            },
+          ],
+        ],
+      ]),
+      pathExists: () => Promise.resolve(false),
+    });
+
+    expect(result.htmlAttachmentFiles.map((file) => file.vaultPath)).toEqual([
+      "confluence/Root/Root.assets/file.html",
+      "confluence/Root/Root.assets/FILE (1).html",
+    ]);
+  });
+
   it("creates frontmatter and markdown content for each page", async () => {
     const rootPage = createPage({ pageId: "100", title: "Root" });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
