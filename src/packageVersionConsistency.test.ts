@@ -13,7 +13,7 @@ function readVersionFromJsonFile(path: string): string | undefined {
 
 describe("plugin package version", () => {
   it("keeps package.json and manifest.json on the release version", () => {
-    expect(readVersionFromJsonFile(join(projectRoot, "package.json"))).toBe("0.1.6");
-    expect(readVersionFromJsonFile(join(projectRoot, "manifest.json"))).toBe("0.1.6");
+    expect(readVersionFromJsonFile(join(projectRoot, "package.json"))).toBe("0.1.61");
+    expect(readVersionFromJsonFile(join(projectRoot, "manifest.json"))).toBe("0.1.61");
   });
 });

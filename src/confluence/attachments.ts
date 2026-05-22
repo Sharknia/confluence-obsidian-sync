@@ -44,6 +44,7 @@ interface AttachmentsApiResponse {
   results?: unknown;
   _links?: {
     next?: unknown;
+    base?: unknown;
   } | null;
 }
 
@@ -106,8 +107,10 @@ export async function fetchConfluencePageHtmlAttachments(
       break;
     }
 
+    const responseBaseUrl = readBaseLink(response.json) ?? settings.confluenceBaseUrl;
+
     for (const rawAttachment of response.json.results) {
-      const attachment = toHtmlAttachment(rawAttachment, pageTitle);
+      const attachment = toHtmlAttachment(rawAttachment, pageTitle, responseBaseUrl);
 
       if (attachment !== null) {
         attachments.push(attachment);
@@ -144,7 +147,7 @@ export async function downloadConfluenceHtmlAttachment(
   attachment: ConfluenceHtmlAttachment,
   transport: ConfluenceRequestTransport
 ): Promise<DownloadConfluenceHtmlAttachmentResult> {
-  const downloadUrl = resolveSameOriginUrl(settings.confluenceBaseUrl, attachment.downloadLink);
+  const downloadUrl = resolveConfluenceContextUrl(settings.confluenceBaseUrl, attachment.downloadLink);
 
   if (downloadUrl === null) {
     return {
@@ -180,7 +183,11 @@ export async function downloadConfluenceHtmlAttachment(
   if (response.status !== 200) {
     return {
       ok: false,
-      issue: createAttachmentIssue(attachment, "api-error", `Confluence HTML 첨부 다운로드 중 API 오류가 발생했습니다. HTTP ${response.status}`)
+      issue: createAttachmentIssue(
+        attachment,
+        "api-error",
+        `Confluence HTML 첨부 다운로드 중 API 오류가 발생했습니다. HTTP ${response.status} attachment=${attachment.title} downloadLink=${attachment.downloadLink} resolvedUrl=${downloadUrl}`
+      )
     };
   }
 
@@ -207,12 +214,18 @@ async function requestConfluence(
   }
 }
 
-function toHtmlAttachment(rawAttachment: unknown, pageTitle: string): ConfluenceHtmlAttachment | null {
+function toHtmlAttachment(rawAttachment: unknown, pageTitle: string, responseBaseUrl: string): ConfluenceHtmlAttachment | null {
   if (!isAttachmentApiResult(rawAttachment)) {
     return null;
   }
 
   if (rawAttachment.status !== "current" || !rawAttachment.title.endsWith(".html")) {
+    return null;
+  }
+
+  const resolvedDownloadLink = resolveConfluenceContextUrl(responseBaseUrl, rawAttachment.downloadLink);
+
+  if (resolvedDownloadLink === null) {
     return null;
   }
 
@@ -223,7 +236,7 @@ function toHtmlAttachment(rawAttachment: unknown, pageTitle: string): Confluence
     title: rawAttachment.title,
     mediaType: rawAttachment.mediaType,
     fileSize: rawAttachment.fileSize,
-    downloadLink: rawAttachment.downloadLink,
+    downloadLink: resolvedDownloadLink,
     versionNumber: rawAttachment.version?.number ?? null
   };
 }
@@ -282,6 +295,14 @@ function readNextLink(response: AttachmentsApiResponse): string | null {
   return response._links.next;
 }
 
+function readBaseLink(response: AttachmentsApiResponse): string | null {
+  if (typeof response._links?.base !== "string" || response._links.base.trim().length === 0) {
+    return null;
+  }
+
+  return response._links.base;
+}
+
 function resolveSameOriginUrl(baseUrl: string, rawUrl: string): string | null {
   try {
     const apiBaseUrl = getConfluenceApiBaseUrl(baseUrl);
@@ -292,6 +313,28 @@ function resolveSameOriginUrl(baseUrl: string, rawUrl: string): string | null {
     }
 
     return parsedUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveConfluenceContextUrl(baseUrl: string, rawUrl: string): string | null {
+  try {
+    const normalizedBaseUrl = new URL(baseUrl);
+    const parsedRawUrl = new URL(rawUrl, normalizedBaseUrl.origin);
+
+    if (parsedRawUrl.origin !== normalizedBaseUrl.origin) {
+      return null;
+    }
+
+    const basePath = normalizedBaseUrl.pathname.replace(/\/+$/u, "");
+    const rawPath = parsedRawUrl.pathname;
+
+    if (basePath.length > 0 && !rawPath.startsWith(`${basePath}/`) && rawPath !== basePath) {
+      parsedRawUrl.pathname = `${basePath}${rawPath.startsWith("/") ? rawPath : `/${rawPath}`}`;
+    }
+
+    return parsedRawUrl.toString();
   } catch {
     return null;
   }
