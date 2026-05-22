@@ -90,4 +90,24 @@ describe("createObsidianRequestTransportFromRequestUrl", () => {
     expect(result.arrayBuffer).toBe(arrayBuffer);
     expect(requestUrl).toHaveBeenCalledWith({ url: "https://selta.atlassian.net/wiki/download/file.html", throw: false });
   });
+
+  it("does not parse JSON when download responses have no headers", async () => {
+    const requestUrl = vi.fn(() =>
+      Promise.resolve({
+        status: 200,
+        headers: undefined,
+        get json(): unknown {
+          throw new Error("Unexpected JSON parse");
+        },
+        text: "<html><body>Prototype</body></html>",
+        arrayBuffer: new TextEncoder().encode("<html><body>Prototype</body></html>").buffer
+      })
+    );
+    const transport = createObsidianRequestTransportFromRequestUrl(requestUrl);
+
+    await expect(transport({ url: "https://selta.atlassian.net/wiki/download/file.html" })).resolves.toMatchObject({
+      status: 200,
+      text: "<html><body>Prototype</body></html>"
+    });
+  });
 });

@@ -24,6 +24,10 @@ function isJsonResponse(response: RequestUrlResponse): boolean {
 }
 
 function getResponseHeader(response: RequestUrlResponse, headerName: string): string | undefined {
+  if (response.headers === undefined || response.headers === null) {
+    return undefined;
+  }
+
   const normalizedHeaderName = headerName.toLowerCase();
 
   for (const [name, value] of Object.entries(response.headers)) {

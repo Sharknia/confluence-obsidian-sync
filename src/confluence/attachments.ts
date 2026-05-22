@@ -169,7 +169,11 @@ export async function downloadConfluenceHtmlAttachment(
   if (response instanceof Error) {
     return {
       ok: false,
-      issue: createAttachmentIssue(attachment, "network-error", "네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다.")
+      issue: createAttachmentIssue(
+        attachment,
+        "network-error",
+        `네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다. attachment=${attachment.title} cause=${response.message}`
+      )
     };
   }
 

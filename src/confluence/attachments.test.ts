@@ -388,7 +388,7 @@ describe("downloadConfluenceHtmlAttachment", () => {
         attachmentId: "att-html",
         attachmentTitle: "prototype.html",
         reason: "network-error",
-        message: "네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다.",
+        message: "네트워크 오류로 Confluence HTML 첨부를 다운로드할 수 없습니다. attachment=prototype.html cause=offline",
       },
     });
   });
