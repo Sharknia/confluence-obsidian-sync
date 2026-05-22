@@ -56,6 +56,7 @@ export interface PageHtmlAttachmentFile {
   attachmentTitle: string;
   vaultPath: string;
   downloadLink: string;
+  versionNumber: number | null;
 }
 
 export interface PageMarkdownConversionIssue {
@@ -333,6 +334,7 @@ function buildHtmlAttachmentFilesByPageId(
       attachmentTitle: attachment.title,
       vaultPath: createAvailableHtmlAttachmentVaultPath(pageVaultPath, attachment, reservedPathKeys),
       downloadLink: attachment.downloadLink,
+      versionNumber: attachment.versionNumber,
     }));
 
     htmlAttachmentFilesByPageId.set(pageId, htmlAttachmentFiles);

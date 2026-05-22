@@ -330,8 +330,10 @@ describe("fetchConfluencePageHtmlAttachments", () => {
 describe("downloadConfluenceHtmlAttachment", () => {
   it("downloads an HTML attachment with Confluence basic auth", async () => {
     const attachment = createHtmlAttachment();
+    const requestedUrls: string[] = [];
     const requestedHeaders: Array<Record<string, string>> = [];
     const transport: ConfluenceRequestTransport = (request) => {
+      requestedUrls.push(request.url);
       requestedHeaders.push(request.headers as Record<string, string>);
 
       return Promise.resolve({
@@ -343,9 +345,12 @@ describe("downloadConfluenceHtmlAttachment", () => {
 
     const result = await downloadConfluenceHtmlAttachment(createSettings(), attachment, transport);
 
+    expect(requestedUrls).toEqual([
+      "https://selta.atlassian.net/wiki/rest/api/content/100/child/attachment/att-html/download?version=3",
+    ]);
     expect(requestedHeaders).toEqual([
       {
-        Accept: "text/html,application/xhtml+xml,*/*",
+        Accept: "*/*",
         Authorization: "Basic b3duZXJAZXhhbXBsZS5jb206c2VjcmV0LXRva2Vu",
       },
     ]);
@@ -383,7 +388,9 @@ describe("downloadConfluenceHtmlAttachment", () => {
 
     const result = await downloadConfluenceHtmlAttachment(createSettings(), attachment, trackingTransport);
 
-    expect(requestedUrls).toEqual(["https://selta.atlassian.net/wiki/download/attachments/100/prototype.html?version=3"]);
+    expect(requestedUrls).toEqual([
+      "https://selta.atlassian.net/wiki/rest/api/content/100/child/attachment/att-html/download?version=3",
+    ]);
     expect(result).toEqual({
       ok: false,
       issue: {
@@ -392,7 +399,7 @@ describe("downloadConfluenceHtmlAttachment", () => {
         attachmentId: "att-html",
         attachmentTitle: "prototype.html",
         reason: "api-error",
-        message: "Confluence HTML 첨부 다운로드 중 API 오류가 발생했습니다. HTTP 404 attachment=prototype.html downloadLink=/wiki/download/attachments/100/prototype.html?version=3 resolvedUrl=https://selta.atlassian.net/wiki/download/attachments/100/prototype.html?version=3",
+        message: "Confluence HTML 첨부 다운로드 중 API 오류가 발생했습니다. HTTP 404 attachment=prototype.html downloadLink=/wiki/download/attachments/100/prototype.html?version=3 resolvedUrl=https://selta.atlassian.net/wiki/rest/api/content/100/child/attachment/att-html/download?version=3",
       },
     });
   });
@@ -439,26 +446,26 @@ describe("downloadConfluenceHtmlAttachment", () => {
     });
   });
 
-  it("rejects cross-origin attachment download links", async () => {
+  it("downloads through the REST endpoint even when the web download link is cross-origin", async () => {
     const attachment = createHtmlAttachment({
       fileSize: null,
       downloadLink: "https://evil.example.com/prototype.html",
       versionNumber: null,
     });
-    const transport: ConfluenceRequestTransport = () => Promise.reject(new Error("transport should not be called"));
+    const requestedUrls: string[] = [];
+    const transport: ConfluenceRequestTransport = (request) => {
+      requestedUrls.push(request.url);
+
+      return Promise.resolve({
+        status: 200,
+        json: null,
+        text: "<html><body>Prototype</body></html>",
+      });
+    };
 
     const result = await downloadConfluenceHtmlAttachment(createSettings(), attachment, transport);
 
-    expect(result).toEqual({
-      ok: false,
-      issue: {
-        pageId: "100",
-        pageTitle: "Root",
-        attachmentId: "att-html",
-        attachmentTitle: "prototype.html",
-        reason: "invalid-download-link",
-        message: "Confluence HTML 첨부 다운로드 링크가 base URL과 다른 origin을 가리킵니다.",
-      },
-    });
+    expect(requestedUrls).toEqual(["https://selta.atlassian.net/wiki/rest/api/content/100/child/attachment/att-html/download"]);
+    expect(result).toEqual({ ok: true, html: "<html><body>Prototype</body></html>" });
   });
 });

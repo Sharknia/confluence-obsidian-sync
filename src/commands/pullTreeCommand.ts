@@ -130,7 +130,7 @@ const defaultPullTreeHtmlAttachmentDownloader: PullTreeHtmlAttachmentDownloader 
     mediaType: "text/html",
     fileSize: null,
     downloadLink: file.downloadLink,
-    versionNumber: null
+    versionNumber: file.versionNumber
   };
   const result = await downloadConfluenceHtmlAttachment(settings, attachment, createObsidianRequestTransport);
 
@@ -569,7 +569,8 @@ function buildAvailableHtmlAttachmentFilesByPageId(
       attachmentId: file.attachmentId,
       attachmentTitle: file.attachmentTitle,
       vaultPath: file.vaultPath,
-      downloadLink: file.downloadLink
+      downloadLink: file.downloadLink,
+      versionNumber: file.versionNumber
     });
     filesByPageId.set(file.pageId, pageFiles);
   }

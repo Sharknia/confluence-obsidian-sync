@@ -80,6 +80,7 @@ describe("buildPageMarkdownFiles", () => {
       attachmentTitle: "nav-prototype_6.html",
       vaultPath: "confluence/Root/Home Navigation 기획.assets/nav-prototype_6.html",
       downloadLink: "/wiki/download/attachments/100/nav-prototype_6.html?version=2",
+      versionNumber: 2,
     };
     const htmlAttachmentsByPageId = new Map([
       [
@@ -163,6 +164,7 @@ describe("buildPageMarkdownFiles", () => {
         attachmentTitle: "prototype.html",
         vaultPath: "confluence/Root/Root.assets/prototype.html",
         downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+        versionNumber: 2,
       },
     ]);
     expect(result.files[0]?.content).toContain("> [!note] Confluence attachment viewer: prototype.html");
@@ -252,6 +254,7 @@ describe("buildPageMarkdownFiles", () => {
         attachmentTitle: "prototype.html",
         vaultPath: "confluence/Root/Root.assets/prototype.html",
         downloadLink: "/wiki/download/attachments/100/prototype.html?version=2",
+        versionNumber: 2,
       },
     ]);
     expect(result.files[0]?.content).toContain(

@@ -3,7 +3,6 @@ import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
 import type { ConfluenceRequestResult, ConfluenceRequestTransport } from "./requestTransport";
 
 const ATTACHMENTS_PAGE_LIMIT = 250;
-const HTML_ATTACHMENT_ACCEPT_HEADER = "text/html,application/xhtml+xml,*/*";
 
 export type ConfluenceHtmlAttachmentIssueReason =
   | "network-error"
@@ -147,7 +146,7 @@ export async function downloadConfluenceHtmlAttachment(
   attachment: ConfluenceHtmlAttachment,
   transport: ConfluenceRequestTransport
 ): Promise<DownloadConfluenceHtmlAttachmentResult> {
-  const downloadUrl = resolveConfluenceContextUrl(settings.confluenceBaseUrl, attachment.downloadLink);
+  const downloadUrl = buildAttachmentRestDownloadUrl(settings.confluenceBaseUrl, attachment);
 
   if (downloadUrl === null) {
     return {
@@ -164,7 +163,7 @@ export async function downloadConfluenceHtmlAttachment(
     url: downloadUrl,
     method: "GET",
     headers: {
-      Accept: HTML_ATTACHMENT_ACCEPT_HEADER,
+      Accept: "*/*",
       Authorization: buildBasicAuthorizationHeader(settings.userEmail, settings.apiToken)
     }
   });
@@ -335,6 +334,23 @@ function resolveConfluenceContextUrl(baseUrl: string, rawUrl: string): string | 
     }
 
     return parsedRawUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function buildAttachmentRestDownloadUrl(baseUrl: string, attachment: ConfluenceHtmlAttachment): string | null {
+  try {
+    const downloadUrl = new URL(
+      `/wiki/rest/api/content/${encodeURIComponent(attachment.pageId)}/child/attachment/${encodeURIComponent(attachment.id)}/download`,
+      getConfluenceApiBaseUrl(baseUrl)
+    );
+
+    if (attachment.versionNumber !== null) {
+      downloadUrl.searchParams.set("version", String(attachment.versionNumber));
+    }
+
+    return downloadUrl.toString();
   } catch {
     return null;
   }

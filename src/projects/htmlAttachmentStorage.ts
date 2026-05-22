@@ -8,6 +8,7 @@ export interface HtmlAttachmentFileToWrite {
   attachmentTitle: string;
   vaultPath: string;
   downloadLink: string;
+  versionNumber: number | null;
   html: string;
 }
 
