@@ -116,6 +116,19 @@ describe("convertMarkdownToConfluenceStorage", () => {
     });
   });
 
+  it("blocks nested or indented Pull-generated Confluence expand callouts", () => {
+    expect(convertMarkdownToConfluenceStorage("> > [!note]- Inner details\n> > Hidden body\n")).toEqual({
+      ok: false,
+      message:
+        "Confluence expand macro callout이 있어 Push를 중단합니다. expand macro 손실을 막기 위해 제거 후 다시 시도하세요.",
+    });
+    expect(convertMarkdownToConfluenceStorage("  > [!note]- Indented details\n  > Hidden body\n")).toEqual({
+      ok: false,
+      message:
+        "Confluence expand macro callout이 있어 Push를 중단합니다. expand macro 손실을 막기 위해 제거 후 다시 시도하세요.",
+    });
+  });
+
   it("blocks inline Pull-generated unsupported macro warnings", () => {
     expect(convertMarkdownToConfluenceStorage("상태 > [!warning] Confluence macro not converted: status\n")).toEqual({
       ok: false,

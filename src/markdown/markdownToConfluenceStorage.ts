@@ -89,7 +89,7 @@ function findUnsupportedMarkdownPatternMessage(markdown: string): string | null 
     return UNSUPPORTED_MACRO_WARNING_MESSAGE;
   }
 
-  if (/^>\s*\[!note\]-\s+.+$/imu.test(markdown)) {
+  if (/^\s*(?:>\s*)+\[!note\]-\s+.+$/imu.test(markdown)) {
     return EXPAND_CALLOUT_UNSUPPORTED_MESSAGE;
   }
 
