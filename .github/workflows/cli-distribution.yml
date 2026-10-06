@@ -41,4 +41,4 @@ jobs:
             echo 'Unsupported Node installation unexpectedly succeeded'
             exit 1
           fi
-          rg EBADENGINE "$RUNNER_TEMP/engine.log"
+          grep -q EBADENGINE "$RUNNER_TEMP/engine.log"
