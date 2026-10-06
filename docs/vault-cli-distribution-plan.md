@@ -2,7 +2,7 @@
 
 작성일: 2026-10-06
 
-상태: Astra xhigh 리뷰 반영 후 `0.1.64` 구현·macOS 검증 완료. Linux·Windows CI 결과 확인 전.
+상태: Astra xhigh 리뷰 반영 후 `0.1.64` 구현·macOS/Linux/Windows 검증 완료.
 
 ## 목표와 사용자 흐름
 
@@ -183,4 +183,5 @@ Astra xhigh의 P2 두 건과 P3 한 건을 반영했다. npm prefix는 쓰기 �
 - Node 20.19.0: 실제 npm `--engine-strict` 설치가 EBADENGINE으로 실패했다.
 - Node 22.14.0에 설치한 전역 명령의 실제 vault `check`가 종료 코드 0·connected를 반환했다. API 쓰기 동작은 로컬 HTTP 서버로만 검증했으며 실제 Confluence Push 미검증 상태는 유지한다.
 - `prepare:current-vault` 실행 후 main.js가 dist 산출물과 일치했다. `prepare:vault`에서 실제 template 경로를 명시해 플러그인·CLI 패키지·template.json 버전 0.1.64를 반영했다.
-- Linux·Windows/Node 22·24 설치와 Node 20 거부는 `.github/workflows/cli-distribution.yml`에서 검증한다. 푸시 후 결과를 확인한다.
+- 별도 template 저장소의 커밋을 실제 vault ZIP으로 만들고, 압축 해제한 폴더에서 README 설치 명령을 그대로 실행했다. ZIP의 루트 vault 구조와 CLI 0.1.64를 확인하고 배포 폴더를 이동한 후 다른 작업 폴더에서 전역 명령을 실행했다.
+- [GitHub Actions 검증](https://github.com/Sharknia/confluence-obsidian-sync/actions/runs/37435563770): macOS·Linux·Windows × Node 22·24의 6개 설치 작업과 Node 20 engine-strict 거부 검사 모두 통과했다. Windows 테스트는 대소문자가 다른 기존 npm 설정도 제거해 prefix를 격리했고, 기본 tar의 한글 인자 제한은 ASCII 파일명으로 내용 검사를 수행해 해결했다. 설치·실행의 prefix와 vault 경로에는 공백·한글을 유지했다.

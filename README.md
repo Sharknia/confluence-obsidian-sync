@@ -52,7 +52,7 @@ npm uninstall --global confluence-obsidian-sync-cli
 - `EEXIST`: 같은 이름의 명령이 있습니다. 원래 프로그램을 확인하세요. `--force`로 덮어쓰지 마세요.
 - Node 버전 관리자로 runtime을 바꿈: 전역 설치 경로가 달라질 수 있으므로 받은 패키지로 다시 설치하세요.
 
-설치 스크립트는 shell 설정이나 npm prefix를 자동 변경하지 않습니다. 설치물에 runtime 의존성을 동봉하므로 설치 시 별도 빌드·의존성 다운로드는 없습니다. macOS에서 설치·실행을 검증했으며 Linux·Windows는 CI 검증 대상으로 두고 결과 확인 전입니다.
+설치 스크립트는 shell 설정이나 npm prefix를 자동 변경하지 않습니다. 설치물에 runtime 의존성을 동봉하므로 설치 시 별도 빌드·의존성 다운로드는 없습니다. macOS·Linux·Windows에서 Node 22·24의 설치와 실행을 검증했습니다.
 
 ### 새 폴더에서 시작
 
