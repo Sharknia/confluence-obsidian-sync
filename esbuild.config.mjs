@@ -13,6 +13,7 @@ await esbuild.build({
   bundle: true,
   entryPoints: ["src/main.ts"],
   external: [
+    "node:*",
     "obsidian",
     "electron",
     "@codemirror/autocomplete",

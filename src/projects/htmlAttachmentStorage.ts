@@ -1,3 +1,4 @@
+import { storageFailureProgress, type StorageProgress } from "./storageFailure";
 import type { ProjectStorageAdapter } from "./projectStorage";
 
 export interface HtmlAttachmentFileToWrite {
@@ -17,7 +18,7 @@ export interface WriteHtmlAttachmentFilesSuccess {
   writtenFileCount: number;
 }
 
-export interface WriteHtmlAttachmentFilesFailure {
+export interface WriteHtmlAttachmentFilesFailure extends StorageProgress {
   ok: false;
   reason: "storage-error";
   message: string;
@@ -53,11 +54,12 @@ async function ensureFolderExists(storage: ProjectStorageAdapter, path: string):
   }
 }
 
-function buildStorageErrorFailure(): WriteHtmlAttachmentFilesFailure {
+function buildStorageErrorFailure(progress = storageFailureProgress(undefined, [], null, "validate")): WriteHtmlAttachmentFilesFailure {
   return {
     ok: false,
     reason: "storage-error",
-    message: "HTML 첨부 파일을 저장할 수 없습니다."
+    message: "HTML 첨부 파일을 저장할 수 없습니다.",
+    ...progress
   };
 }
 
@@ -66,6 +68,9 @@ export async function writeHtmlAttachmentFiles(
   files: HtmlAttachmentFileToWrite[]
 ): Promise<WriteHtmlAttachmentFilesResult> {
   const ensuredFolderPaths = new Set<string>();
+  const completedPaths: string[] = [];
+  let failedPath: string | null = null;
+  let stage = "mkdir";
 
   try {
     if (files.some((file) => !isValidVaultPath(file.vaultPath))) {
@@ -73,6 +78,8 @@ export async function writeHtmlAttachmentFiles(
     }
 
     for (const file of files) {
+      failedPath = file.vaultPath;
+      stage = "mkdir";
       for (const parentFolderPath of buildParentFolderPaths(file.vaultPath)) {
         if (ensuredFolderPaths.has(parentFolderPath)) {
           continue;
@@ -83,14 +90,16 @@ export async function writeHtmlAttachmentFiles(
         ensuredFolderPaths.add(parentFolderPath);
       }
 
+      stage = "write";
       await storage.write(file.vaultPath, file.html);
+      completedPaths.push(file.vaultPath);
     }
 
     return {
       ok: true,
       writtenFileCount: files.length
     };
-  } catch {
-    return buildStorageErrorFailure();
+  } catch (error) {
+    return buildStorageErrorFailure(storageFailureProgress(error, completedPaths, failedPath, stage));
   }
 }

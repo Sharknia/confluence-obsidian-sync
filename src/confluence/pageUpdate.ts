@@ -25,6 +25,7 @@ export interface ConfluencePagePushFailure {
   ok: false;
   reason: ConfluencePagePushFailureReason;
   message: string;
+  remoteState?: "applied" | "not-applied" | "unknown";
 }
 
 export type ConfluencePagePushResult = ConfluencePagePushSuccess | ConfluencePagePushFailure;
@@ -323,18 +324,25 @@ export async function updateConfluencePageBody(
   );
 
   if (isPushFailure(response)) {
-    return response;
+    return { ...response, remoteState: "unknown" };
   }
 
   if (response.status !== 200) {
-    return classifyPageUpdateHttpFailure(response.status);
+    return { ...classifyPageUpdateHttpFailure(response.status),
+      remoteState: [400, 401, 403, 404, 409, 429].includes(response.status) ? "not-applied" : "unknown" };
   }
 
   const parsedUpdateResponse = parsePageForPushResponse(response.json);
 
-  if (parsedUpdateResponse.ok) {
+  if (parsedUpdateResponse.ok && parsedUpdateResponse.page.pageId === input.pageId &&
+    parsedUpdateResponse.page.versionNumber === input.nextVersionNumber) {
     return parsedUpdateResponse;
   }
 
-  return fetchConfluencePageForPush(settings, input.pageId, transport);
+  const verified = await fetchConfluencePageForPush(settings, input.pageId, transport);
+  if (verified.ok && verified.page.pageId === input.pageId && verified.page.versionNumber === input.nextVersionNumber) {
+    return verified;
+  }
+  return { ok: false, reason: "invalid-response", remoteState: "applied",
+    message: "Confluence에는 업로드됐지만 갱신 version을 확인하지 못했습니다. 원격 상태를 조회한 뒤 로컬 metadata를 복구하세요." };
 }

@@ -93,6 +93,7 @@ describe("writeHtmlAttachmentFiles", () => {
       ok: false,
       reason: "storage-error",
       message: "HTML 첨부 파일을 저장할 수 없습니다.",
+      writtenFileCount: 0, completedPaths: [], failedPath: "confluence/Root/Root.assets/prototype.html", failedStage: "write", outcomeUnknown: true,
     });
   });
 
@@ -119,6 +120,7 @@ describe("writeHtmlAttachmentFiles", () => {
         ok: false,
         reason: "storage-error",
         message: "HTML 첨부 파일을 저장할 수 없습니다.",
+        writtenFileCount: 0, completedPaths: [], failedPath: null, failedStage: "validate", outcomeUnknown: false,
       });
       expect(storage.checkedFolders).toEqual([]);
       expect(storage.createdFolders).toEqual([]);

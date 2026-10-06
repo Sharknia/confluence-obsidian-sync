@@ -74,7 +74,7 @@ const fetchNoHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
 
 type RunPullTreeCommandInput = Parameters<typeof runPullTreeCommand>[0];
 
-function runPullTreeCommandForTest(input: RunPullTreeCommandInput): Promise<void> {
+function runPullTreeCommandForTest(input: RunPullTreeCommandInput): ReturnType<typeof runPullTreeCommand> {
   return runPullTreeCommand({
     fetchHtmlAttachments: fetchNoHtmlAttachments,
     ...input
@@ -1276,7 +1276,7 @@ ${existingBody}`)
     expect(storage.writtenFiles).toEqual([]);
   });
 
-  it("페이지 트리 조회 중 예기치 못한 오류가 발생하면 Notice와 console.error를 남긴다", async () => {
+  it("예기치 못한 오류의 원문을 출력하지 않고 실패 결과를 반환한다", async () => {
     const notices: string[] = [];
     const storage = createStorageMock();
     const unexpectedError = new Error("unexpected failure");
@@ -1291,11 +1291,8 @@ ${existingBody}`)
         showNotice: (message) => notices.push(message)
       });
 
-      expect(notices).toEqual(["unexpected failure"]);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Pull Tree 실행 중 예기치 못한 오류가 발생했습니다.",
-        unexpectedError
-      );
+      expect(notices).toEqual(["Confluence 페이지 트리 조회 중 오류가 발생했습니다."]);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
     } finally {
       consoleErrorSpy.mockRestore();
     }

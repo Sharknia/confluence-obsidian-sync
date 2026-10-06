@@ -98,7 +98,7 @@ Confluence version이 마지막 pull 또는 마지막 push 시점의 version과 
 - 안전 삭제 폴더
 - Markdown 파일명 규칙
 
-인증 정보는 가능한 경우 Obsidian의 secret storage를 사용한다.
+현재 인증 정보는 vault의 플러그인 `data.json`에 저장한다. CLI는 같은 설정을 읽거나 환경변수로 인증하며, 인증 정보의 별도 사본을 만들지 않는다. 인증·개인 설정 파일은 Git에서 제외한다.
 
 ### 6.2 Ribbon Icon
 
@@ -180,9 +180,7 @@ Pull Tree에서는 Confluence 페이지 본문을 Markdown으로 변환한다. M
 
 ### 8.2 Markdown to Confluence
 
-Push Current Page에서는 Markdown을 Atlassian Document Format으로 변환한 뒤 Confluence API로 기존 페이지 본문을 갱신한다.
-
-Markdown to ADF 변환은 무료 오픈소스 도구인 marklassian 또는 동등한 라이브러리 사용을 우선 검토한다.
+Push Current Page와 CLI의 단일 문서 Push는 기존 Markdown 변환기로 Confluence `storage` 형식의 HTML을 생성하고 기존 페이지 본문을 갱신한다. version 충돌 검사를 공유하며 원격 페이지 생성·이동·삭제는 수행하지 않는다.
 
 ## 9. 삭제 정책
 
@@ -226,13 +224,13 @@ MVP는 다음 조건을 만족하면 성공으로 본다.
 
 ### 12.1 핵심 결정
 
-MVP의 배포 단위는 Obsidian 플러그인 단독 ZIP이 아니라 Git으로 배포되는 Obsidian vault template이다.
+배포는 Public GitHub의 플러그인 코드 저장소와 vault template 저장소를 분리한다. 플러그인 ZIP 또는 vault template으로 Obsidian을 시작할 수 있다. 독립 CLI는 코드 저장소에서 빌드한 `dist/cli.mjs`로 실행하며 플러그인 ZIP과 template에는 동봉하지 않는다.
 
-사용자는 사내 Git 저장소를 clone하고, 해당 폴더를 Obsidian vault로 연다. vault 안에는 플러그인 빌드 산출물과 공통 Obsidian 설정이 포함된다. 사용자별 인증 정보와 Confluence에서 내려받은 문서 산출물은 Git에서 제외한다.
+사용자는 vault template 저장소를 clone하거나 ZIP으로 내려받고, 해당 폴더를 Obsidian vault로 연다. vault 안에는 플러그인 빌드 산출물과 공통 Obsidian 설정이 포함된다. 사용자별 인증 정보와 Confluence에서 내려받은 문서 산출물은 Git에서 제외한다.
 
 이 결정은 다음 이유로 중요하다.
 
-- 별도 스토어 출시 없이 사내 Git 저장소만으로 배포할 수 있다.
+- 별도 스토어 출시 없이 두 Public GitHub 저장소로 배포할 수 있다.
 - 플러그인 설치 절차가 사실상 vault 열기 절차로 단순화된다.
 - 모든 사용자가 동일한 플러그인 버전과 기본 Obsidian 설정을 사용할 수 있다.
 - Confluence 문서 산출물과 개인 인증 정보는 로컬에만 남는다.
@@ -261,7 +259,6 @@ confluence-vault-template/
   graphify-out/
     .gitkeep
 
-  .env.example
   .gitignore
   README.md
 ```
@@ -271,7 +268,6 @@ confluence-vault-template/
 - Obsidian vault 기본 설정
 - Obsidian 플러그인 빌드 산출물
 - 플러그인 공통 설정 템플릿
-- `.env.example`
 - `.gitignore`
 - 사용 안내 문서
 - 빈 Confluence 산출물 폴더 유지를 위한 `.gitkeep`
@@ -317,7 +313,7 @@ graphify-out/*
 ### 12.5 사용자 설치 흐름
 
 1. 사내 Git 저장소를 clone한다.
-2. `.env.example`을 참고해 로컬 `.env`를 만든다.
+2. 인증 정보는 플러그인 설정 UI에 입력한다. Obsidian 없이 시작할 때는 CLI 호출 환경의 환경변수를 사용한다.
 3. Obsidian에서 clone한 폴더를 vault로 연다.
 4. Community plugins를 활성화한다.
 5. Confluence Obsidian Sync 플러그인을 활성화한다.
@@ -363,7 +359,7 @@ graphify 산출물은 Git에 커밋하지 않는다. 산출물은 사용자 로�
 
 ### 13.3 AI 도구 사용 경계
 
-AI 도구는 로컬 Markdown과 graphify 산출물을 읽고 사용자를 도울 수 있다. 다만 Confluence 업로드는 플러그인의 `Push Current Page` 흐름을 통해서만 수행한다.
+AI 도구는 로컬 Markdown과 graphify 산출물을 읽고 사용자를 도울 수 있다. Confluence 업로드는 플러그인의 `Push Current Page` 또는 같은 동기화 로직을 사용하는 독립 CLI의 단일 문서 Push 흐름으로 수행한다. 독립 CLI는 버전 `0.1.63`에서 제공한다. CLI의 `--yes`는 명시적인 실행 확인을 대체하며 version·출처·경로 검사를 우회하지 않는다.
 
 이 경계를 두는 이유는 다음과 같다.
 
@@ -384,3 +380,13 @@ AI 도구는 로컬 Markdown과 graphify 산출물을 읽고 사용자를 도울
 - 상세 diff UI
 - graphify 실행 명령 통합
 - 로컬 AI 도구 사용 가이드
+
+## 15. Obsidian 없이 사용하는 CLI
+
+버전 `0.1.63`은 Obsidian을 실행하지 않아도 외부 LLM과 사용자가 같은 vault에서 프로젝트 생성, 트리 Pull, 단일 문서 Pull/Push를 실행할 수 있는 Node CLI를 제공한다. 플러그인과 CLI는 기존 Confluence API, Markdown 변환, 로컬 수정 보호, 백업, version 충돌 검사, 안전 삭제 정책을 공유한다.
+
+CLI는 이미 존재하는 vault의 절대 경로와 문서의 상대 경로를 입력받고 JSON 결과와 종료 코드 0·1·2·3을 반환한다. 기존 플러그인 설정을 읽거나 환경변수로 인증하며, 자체 AI 실행기·서버·채팅 UI는 추가하지 않는다. Push와 강제 덮어쓰기는 CLI에서도 명시적인 확인을 요구한다.
+
+파일 적용 중 실패는 실제 완료 개수와 실패 경로를 보존한다. Push 응답 유실은 원격 반영 여부 불명으로 반환하고 자동 재전송하지 않는다. 플러그인과 CLI는 vault 단위의 동기화 잠금과 로컬 변경 검사를 공유한다.
+
+실행 방법은 [README](../README.md), 구현 범위와 검증 상태는 [CLI 작업계획서](cli-implementation-plan.md)에 기록한다.

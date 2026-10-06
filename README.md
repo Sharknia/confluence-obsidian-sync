@@ -1,6 +1,85 @@
 # Confluence Obsidian Sync
 
-Confluence 문서를 Obsidian에서 편집 가능한 로컬 Markdown 작업 사본으로 내려받고, 안전하게 반복 Pull하기 위한 Obsidian 플러그인입니다.
+Confluence 문서를 편집 가능한 로컬 Markdown 작업 사본으로 내려받고, 문서 하나를 다시 업로드하는 무료 로컬 도구입니다. Obsidian 플러그인과 앱 없이 실행하는 Node CLI가 같은 변환·동기화 정책을 사용합니다.
+
+현재 버전: `0.1.63`
+
+## Obsidian 없이 사용하는 CLI
+
+Node.js 22 이상과 pnpm이 필요합니다. 이 저장소에서 CLI를 빌드합니다.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run build:cli
+node dist/cli.mjs --help
+node dist/cli.mjs --version
+```
+
+기존 vault는 `.obsidian/plugins/confluence-obsidian-sync/data.json`의 인증·프로젝트 설정을 그대로 읽습니다. Obsidian을 실행하거나 플러그인을 로드할 필요가 없으며 CLI는 이 설정 파일을 수정하지 않습니다.
+
+```bash
+node dist/cli.mjs check --vault '/절대/경로/vault'
+node dist/cli.mjs status --vault '/절대/경로/vault'
+node dist/cli.mjs pull-tree --vault '/절대/경로/vault'
+node dist/cli.mjs pull-page --vault '/절대/경로/vault' --file 'confluence/프로젝트/문서.md'
+node dist/cli.mjs push-page --vault '/절대/경로/vault' --file 'confluence/프로젝트/문서.md' --yes
+```
+
+개발 저장소에서는 `pnpm --silent run cli check --vault '/절대/경로/vault'`도 사용할 수 있습니다. `cli` 명령은 빌드된 실행 파일만 호출합니다. 명령 앞에 추가 `--`를 넣지 마세요.
+
+### 새 폴더에서 시작
+
+Obsidian을 한 번도 사용하지 않은 폴더는 다음 환경변수를 호출 프로세스에 설정합니다. 토큰은 CLI 인자로 받거나 파일에 따로 저장하지 않습니다.
+
+| 환경변수 | 값 |
+| --- | --- |
+| `CONFLUENCE_BASE_URL` | Confluence HTTPS 사이트 주소. `/wiki` 포함 가능 |
+| `CONFLUENCE_USER_EMAIL` | Atlassian 계정 이메일 |
+| `CONFLUENCE_API_TOKEN` | API token |
+
+환경변수는 기존 설정의 해당 연결 필드만 덮어씁니다. 회사별 기본 사이트나 루트를 새 CLI 프로젝트에 자동 적용하지 않습니다.
+
+```bash
+node dist/cli.mjs init --vault '/절대/경로/vault' --root 'https://example.atlassian.net/wiki/spaces/SPACE/pages/123'
+node dist/cli.mjs pull-tree --vault '/절대/경로/vault' --project 'confluence/프로젝트'
+```
+
+`init` 결과의 `project.localFolderPath`를 이후 명령의 `--project`에 사용합니다. 페이지·폴더 URL을 모두 지원합니다. `init`은 로컬 manifest를 만들며 원격 페이지나 Obsidian의 현재 프로젝트 선택을 변경하지 않습니다.
+
+### 명령과 확인 정책
+
+| 명령 | 동작 |
+| --- | --- |
+| `check` | 인증·연결 확인 |
+| `status` | 선택한 프로젝트와 vault 공용 `logs/latest.md`의 요약 |
+| `init --root <URL>` | 로컬 프로젝트 생성 또는 재사용 |
+| `pull-tree` | 트리 Pull. 로컬 수정본은 스킵하고 원격에서 사라진 문서는 안전 삭제 폴더로 이동 |
+| `pull-tree --force --yes` | 로컬 수정본을 백업 없이 원격 본문으로 덮어쓰기 |
+| `pull-page --file <경로>` | 문서 하나를 Pull. 로컬 수정본이 있으면 `--yes`가 필요하며 연결 해제 백업 생성 |
+| `push-page --file <경로> --yes` | 기존 원격 페이지 하나에 Push. version 충돌 검사 유지 |
+
+`--vault`는 이미 존재하는 폴더의 절대 경로이며 `--project`와 `--file`은 vault 기준 상대 경로입니다. 단일 문서는 선택한 프로젝트 내부에 있어야 하고 frontmatter의 출처 사이트·pageId가 연결 대상과 일치해야 합니다. 출처 정보가 없는 예전 파일은 검증된 Pull Tree 산출물로 다시 시작하세요.
+
+확인 플래그 없이 위험한 명령을 실행하면 `confirmation-required`와 대상·version·로컬 변경 정보를 반환합니다. LLM은 그 결과를 확인하고 사용자가 허용한 범위에서 `--yes`로 다시 실행할 수 있습니다. `--yes`로 version 충돌·출처·경로 검사를 우회할 수 없습니다.
+
+### JSON 결과와 복구
+
+stdout은 JSON 객체 하나이며 종료 코드는 다음과 같습니다.
+
+| 종료 코드 | 의미 |
+| --- | --- |
+| `0` | 성공 또는 변경 없음 |
+| `1` | 설정·인증·연결·파일 접근 등 실행 실패 |
+| `2` | 확인 필요, version 충돌, 출처·경로 검사, 다른 동기화 작업의 잠금으로 차단 |
+| `3` | 부분 완료 또는 적용 여부 불명 |
+
+`status`와 `reason`, 실제 완료 개수인 `counts`, 실패 단계·경로를 확인하세요. Pull 결과의 `reportWritten`이 false이고 `reportPath`가 null이면 이전 리포트를 이번 결과로 판단하면 안 됩니다. 일부 조회·변환이 실패하면 안전 삭제를 보류합니다.
+
+Push의 `remoteState`는 `applied`, `not-applied`, `unknown`입니다. PUT 응답이 유실된 `unknown` 상태나 원격 성공·로컬 metadata 갱신 실패는 자동 재업로드하지 마세요. 원격 version·본문을 확인한 뒤 로컬 metadata를 맞춰야 합니다. 충돌 검사를 우회하기 위해 version을 임의로 올리지 마세요.
+
+CLI와 업데이트된 플러그인은 `.confluence-sync/operation.lock`을 공유합니다. 잠금이 남아 있다면 실행 중인 작업이 없는지 먼저 확인한 뒤 해당 잠금 파일을 제거합니다. 실행 중 감지된 파일 수정과 경로 충돌은 차단하지만, 공동 잠금을 사용하지 않는 외부 에디터의 모든 동시 편집까지 원자적으로 보호하지는 않습니다. 동기화 중 같은 파일을 동시에 편집하지 마세요.
+
+CLI는 Sync Panel·터미널 열기·플러그인 업데이트 UI를 복제하지 않습니다. Graphify는 기존 CLI로 실행합니다. CLI 실행 파일은 플러그인 ZIP과 vault template에 포함하지 않습니다.
 
 ## 새 vault에 수동 설치
 
@@ -13,7 +92,7 @@ pnpm run package:plugin
 2. 생성된 zip을 새 vault의 플러그인 폴더에 풉니다.
 
 ```text
-dist/confluence-obsidian-sync-0.1.2.zip
+dist/confluence-obsidian-sync-0.1.63.zip
 ```
 
 zip을 풀면 다음 폴더가 생겨야 합니다.
@@ -94,4 +173,10 @@ pnpm install
 pnpm run verify
 pnpm run prepare:current-vault
 pnpm run package:plugin
+```
+
+실제 인증으로 페이지·폴더 조회와 HTML 첨부 다운로드를 읽기 전용으로 검증하려면 다음을 실행합니다. HTTP status별 개수와 결과 개수만 출력하며 원격 문서를 수정하지 않습니다.
+
+```bash
+node scripts/smoke-cli-readonly.mjs --vault '/인증이/설정된/vault'
 ```

@@ -1,3 +1,6 @@
+import { finishCommand, type CommandResult } from "./commandResult";
+import { requireRequestTransport, type ConfluenceRequestTransport } from "../confluence/requestTransport";
+import { StorageGuardError } from "../projects/storageFailure";
 import {
   getMissingConfluenceConnectionFields,
   type RequiredConfluenceConnectionField
@@ -10,7 +13,8 @@ import {
   createCurrentPageBackupPath,
   createDetachedPageBackupMarkdown,
   createPageMarkdownContent,
-  parsePageMarkdownMetadata
+  parsePageMarkdownMetadata,
+  hasVerifiedMarkdownSource
 } from "../projects/pageMarkdown";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
 import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
@@ -27,6 +31,8 @@ export type PullCurrentPageFetcher = (
 export interface RunPullCurrentPageCommandInput {
   settings: ConfluenceSyncSettings;
   storage: ProjectStorageAdapter;
+  transport?: ConfluenceRequestTransport;
+  verifySource?: boolean;
   getActiveMarkdownFile: () => ActiveMarkdownFile | null;
   fetchPage?: PullCurrentPageFetcher;
   now?: () => Date;
@@ -34,37 +40,31 @@ export interface RunPullCurrentPageCommandInput {
   showNotice: (message: string) => void;
 }
 
-const defaultPullCurrentPageFetcher: PullCurrentPageFetcher = async (settings, pageId) => {
-  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
-
-  return fetchConfluencePageForPull(settings, pageId, createObsidianRequestTransport);
-};
-
 export async function runPullCurrentPageCommand({
   settings,
   storage,
   getActiveMarkdownFile,
-  fetchPage = defaultPullCurrentPageFetcher,
+  transport,
+  verifySource = false,
+  fetchPage = (settings, pageId) => fetchConfluencePageForPull(settings, pageId, requireRequestTransport(transport)),
   now = () => new Date(),
   confirmOverwriteLocalChanges,
   showNotice
-}: RunPullCurrentPageCommandInput): Promise<void> {
+}: RunPullCurrentPageCommandInput): Promise<CommandResult> {
   const missingFields = getMissingConfluenceConnectionFields(settings);
 
   if (missingFields.length > 0) {
-    showNotice(
+    return finishCommand(showNotice, "error", "missing-settings",
       `Pull Current Page 실행 전에 Confluence 연결 설정이 필요합니다: ${missingFields
         .map(toSettingsFieldName)
         .join(", ")}`
     );
-    return;
   }
 
   const activeFile = getActiveMarkdownFile();
 
   if (activeFile === null) {
-    showNotice("현재 열린 Markdown 파일이 없습니다.");
-    return;
+    return finishCommand(showNotice, "error", "missing-file", "현재 열린 Markdown 파일이 없습니다.");
   }
 
   let originalContent: string;
@@ -72,27 +72,27 @@ export async function runPullCurrentPageCommand({
   try {
     originalContent = await storage.read(activeFile.path);
   } catch {
-    showNotice("현재 Markdown 파일을 읽을 수 없습니다.");
-    return;
+    return finishCommand(showNotice, "error", "file-read-failed", "현재 Markdown 파일을 읽을 수 없습니다.");
   }
 
   const metadata = parsePageMarkdownMetadata(originalContent);
 
   if (metadata === null) {
-    showNotice("Confluence metadata가 있는 Markdown 파일만 Pull할 수 있습니다.");
-    return;
+    return finishCommand(showNotice, "blocked", "missing-metadata", "Confluence metadata가 있는 Markdown 파일만 Pull할 수 있습니다.");
   }
 
   if (metadata.versionNumber === null || metadata.contentHash === null) {
-    showNotice("confluenceVersion과 confluenceContentHash가 있어야 Pull Current Page를 실행할 수 있습니다.");
-    return;
+    return finishCommand(showNotice, "blocked", "missing-metadata", "confluenceVersion과 confluenceContentHash가 있어야 Pull Current Page를 실행할 수 있습니다.");
+  }
+
+  if (verifySource && !hasVerifiedMarkdownSource(originalContent, settings.confluenceBaseUrl)) {
+    return finishCommand(showNotice, "blocked", "source-not-verified", "문서의 Confluence 출처와 pageId를 확인할 수 없습니다. 해당 사이트의 Pull Tree 산출물을 사용하세요.");
   }
 
   const remotePageResult = await fetchPage(settings, metadata.pageId);
 
   if (!remotePageResult.ok) {
-    showNotice(remotePageResult.message);
-    return;
+    return finishCommand(showNotice, "error", remotePageResult.reason, remotePageResult.message);
   }
 
   const markdownConversion = convertConfluenceStorageToMarkdown(remotePageResult.page.bodyStorageValue);
@@ -105,7 +105,7 @@ export async function runPullCurrentPageCommand({
     parentId: remotePageResult.page.parentId,
     bodyMarkdown: remoteBodyMarkdown
   });
-  let backupPath: string | null;
+  let backupPath: string | null = null;
   const hasLocalChanges = calculateMarkdownBodyHash(metadata.bodyMarkdown) !== metadata.contentHash;
 
   if (hasLocalChanges) {
@@ -123,8 +123,9 @@ export async function runPullCurrentPageCommand({
       ) ?? true;
 
     if (!shouldContinue) {
-      showNotice("Pull Current Page를 취소했습니다.");
-      return;
+      return finishCommand(showNotice, "blocked", "confirmation-required", "Pull Current Page를 취소했습니다.", {
+        confirmation: { filePath: activeFile.path, pageId: metadata.pageId, remoteVersion: remotePageResult.page.versionNumber, backupRequired: true }
+      });
     }
   }
 
@@ -137,15 +138,16 @@ export async function runPullCurrentPageCommand({
       now: now()
     });
     await storage.write(activeFile.path, remoteContent);
-  } catch {
-    showNotice("Pull Current Page 결과를 로컬 파일에 적용할 수 없습니다.");
-    return;
+  } catch (error) {
+    return finishCommand(showNotice, backupPath || !(error instanceof StorageGuardError) ? "partial" : "blocked",
+      error instanceof StorageGuardError ? error.reason : "storage-error", "Pull Current Page 결과를 로컬 파일에 적용할 수 없습니다.", { backupPath, localUpdated: false });
   }
 
-  showNotice(
+  return finishCommand(showNotice, "success", "pulled",
     backupPath === null
       ? `Pull Current Page 완료: Confluence version ${remotePageResult.page.versionNumber}, 백업 없음`
-      : `Pull Current Page 완료: Confluence version ${remotePageResult.page.versionNumber}, 백업 생성 ${backupPath}`
+      : `Pull Current Page 완료: Confluence version ${remotePageResult.page.versionNumber}, 백업 생성 ${backupPath}`,
+    { backupPath, localUpdated: true, versionNumber: remotePageResult.page.versionNumber }
   );
 }
 

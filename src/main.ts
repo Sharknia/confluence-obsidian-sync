@@ -1,3 +1,6 @@
+import { createNodeVaultStorage } from "./platform/nodeVaultStorage";
+import { VaultLockedError, withVaultOperationLock } from "./platform/vaultOperationLock";
+import { StorageGuardError } from "./projects/storageFailure";
 import { FileSystemAdapter, Notice, Platform, Plugin, requestUrl, type TFile } from "obsidian";
 import {
   FORCE_PULL_TREE_COMMAND_ID,
@@ -174,30 +177,41 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
     }
   }
 
-  private async runPullTree(): Promise<void> {
-    await runPullTreeCommand({
-      settings: this.settings,
-      storage: createVaultStorageAdapter(this),
-      ensureCurrentProject: () => this.ensureCurrentProject(),
-      showNotice: (message) => new Notice(message),
-      openReport: (path) => openVaultMarkdownFile(this, path)
-    });
-
+  private async runSyncOperation(action: () => Promise<void>): Promise<void> {
+    try { await withVaultOperationLock(this.getVaultBasePath(), action); }
+    catch (error) {
+      new Notice(error instanceof VaultLockedError || error instanceof StorageGuardError
+        ? error.message : "동기화 작업을 완료하지 못했습니다.");
+    }
     await this.refreshSyncPanelViews();
   }
 
-  private async runForcePullTree(): Promise<void> {
-    await runPullTreeCommand({
-      settings: this.settings,
-      storage: createVaultStorageAdapter(this),
-      ensureCurrentProject: () => this.ensureCurrentProject(),
-      mode: "force",
-      confirmForcePull: (message) => window.confirm(message),
-      showNotice: (message) => new Notice(message),
-      openReport: (path) => openVaultMarkdownFile(this, path)
+  private async runPullTree(): Promise<void> {
+    await this.runSyncOperation(async () => {
+      await runPullTreeCommand({
+        settings: this.settings,
+        transport: createObsidianRequestTransport,
+        storage: createVaultStorageAdapter(this),
+        ensureCurrentProject: () => this.ensureCurrentProject(),
+        showNotice: (message) => new Notice(message),
+        openReport: (path) => openVaultMarkdownFile(this, path)
+      });
     });
+  }
 
-    await this.refreshSyncPanelViews();
+  private async runForcePullTree(): Promise<void> {
+    await this.runSyncOperation(async () => {
+      await runPullTreeCommand({
+        settings: this.settings,
+        transport: createObsidianRequestTransport,
+        storage: createVaultStorageAdapter(this),
+        ensureCurrentProject: () => this.ensureCurrentProject(),
+        mode: "force",
+        confirmForcePull: (message) => window.confirm(message),
+        showNotice: (message) => new Notice(message),
+        openReport: (path) => openVaultMarkdownFile(this, path)
+      });
+    });
   }
 
   private async ensureCurrentProject(): Promise<PullTreeProjectEnsurerResult> {
@@ -250,43 +264,45 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
   }
 
   private async pullCurrentPage(): Promise<void> {
-    await runPullCurrentPageCommand({
-      settings: this.settings,
-      storage: createVaultStorageAdapter(this),
-      getActiveMarkdownFile: () => {
-        const activeFile = this.app.workspace.getActiveFile();
+    await this.runSyncOperation(async () => {
+      await runPullCurrentPageCommand({
+        settings: this.settings,
+        transport: createObsidianRequestTransport,
+        storage: createVaultStorageAdapter(this),
+        getActiveMarkdownFile: () => {
+          const activeFile = this.app.workspace.getActiveFile();
 
-        if (activeFile === null || activeFile.extension !== "md") {
-          return null;
-        }
+          if (activeFile === null || activeFile.extension !== "md") {
+            return null;
+          }
 
-        return { path: activeFile.path };
-      },
-      confirmOverwriteLocalChanges: (message) => window.confirm(message),
-      showNotice: (message) => new Notice(message)
+          return { path: activeFile.path };
+        },
+        confirmOverwriteLocalChanges: (message) => window.confirm(message),
+        showNotice: (message) => new Notice(message)
+      });
     });
-
-    await this.refreshSyncPanelViews();
   }
 
   private async pushCurrentPage(): Promise<void> {
-    await runPushCurrentPageCommand({
-      settings: this.settings,
-      storage: createVaultStorageAdapter(this),
-      getActiveMarkdownFile: () => {
-        const activeFile = this.app.workspace.getActiveFile();
+    await this.runSyncOperation(async () => {
+      await runPushCurrentPageCommand({
+        settings: this.settings,
+        transport: createObsidianRequestTransport,
+        storage: createVaultStorageAdapter(this),
+        getActiveMarkdownFile: () => {
+          const activeFile = this.app.workspace.getActiveFile();
 
-        if (activeFile === null || activeFile.extension !== "md") {
-          return null;
-        }
+          if (activeFile === null || activeFile.extension !== "md") {
+            return null;
+          }
 
-        return { path: activeFile.path };
-      },
-      confirmPush: (message) => window.confirm(message),
-      showNotice: (message) => new Notice(message)
+          return { path: activeFile.path };
+        },
+        confirmPush: (message) => window.confirm(message),
+        showNotice: (message) => new Notice(message)
+      });
     });
-
-    await this.refreshSyncPanelViews();
   }
 
   private openCurrentProjectRootLink(): void {
@@ -602,14 +618,9 @@ export default class ConfluenceObsidianSyncPlugin extends Plugin {
 }
 
 function createVaultStorageAdapter(plugin: ConfluenceObsidianSyncPlugin): ProjectStorageAdapter {
-  return {
-    exists: (path) => plugin.app.vault.adapter.exists(path),
-    mkdir: (path) => plugin.app.vault.adapter.mkdir(path),
-    read: (path) => plugin.app.vault.adapter.read(path),
-    write: (path, data) => plugin.app.vault.adapter.write(path, data),
-    list: (path) => plugin.app.vault.adapter.list(path),
-    rename: (fromPath, toPath) => plugin.app.vault.adapter.rename(fromPath, toPath)
-  };
+  const adapter = plugin.app.vault.adapter;
+  if (!(adapter instanceof FileSystemAdapter)) throw new Error("현재 vault의 로컬 파일 시스템 경로를 확인할 수 없습니다.");
+  return createNodeVaultStorage(adapter.getBasePath());
 }
 
 async function requestGitHubJson(url: string): Promise<unknown> {

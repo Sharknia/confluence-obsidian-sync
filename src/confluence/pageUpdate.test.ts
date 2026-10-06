@@ -245,7 +245,8 @@ describe("updateConfluencePageBody", () => {
     expect(result).toEqual({
       ok: false,
       reason,
-      message
+      message,
+      remoteState: status === 503 ? "unknown" : "not-applied"
     });
   });
 
@@ -266,7 +267,8 @@ describe("updateConfluencePageBody", () => {
     expect(result).toEqual({
       ok: false,
       reason: "network-error",
-      message: "네트워크 오류로 Confluence 페이지를 업데이트할 수 없습니다."
+      message: "네트워크 오류로 Confluence 페이지를 업데이트할 수 없습니다.",
+      remoteState: "unknown"
     });
   });
 
@@ -318,7 +320,8 @@ describe("updateConfluencePageBody", () => {
     expect(result).toEqual({
       ok: false,
       reason: "invalid-response",
-      message: "Confluence 페이지 응답 형식이 올바르지 않습니다."
+      message: "Confluence에는 업로드됐지만 갱신 version을 확인하지 못했습니다. 원격 상태를 조회한 뒤 로컬 metadata를 복구하세요.",
+      remoteState: "applied"
     });
   });
 });

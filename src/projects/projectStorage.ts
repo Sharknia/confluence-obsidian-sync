@@ -1,9 +1,11 @@
+import { storageFailureProgress, type StorageProgress } from "./storageFailure";
 import type { PageMarkdownFile } from "./pageMarkdown";
 import type { PullSyncPlan } from "./pullSyncPolicy";
 import type { ConfluenceProjectManifest, ProjectPaths, RootContentType } from "./projectManifest";
 
 export interface ProjectStorageAdapter {
   exists(path: string): Promise<boolean>;
+  assertUnchanged?(path: string): Promise<void>;
   mkdir(path: string): Promise<void>;
   read(path: string): Promise<string>;
   write(path: string, data: string): Promise<void>;
@@ -29,7 +31,7 @@ export interface WriteMarkdownPagesSuccess {
   writtenFileCount: number;
 }
 
-export interface WriteMarkdownPagesFailure {
+export interface WriteMarkdownPagesFailure extends StorageProgress {
   ok: false;
   reason: "storage-error";
   message: string;
@@ -39,13 +41,15 @@ export type WriteMarkdownPagesResult = WriteMarkdownPagesSuccess | WriteMarkdown
 
 export interface PullSyncApplySuccess {
   ok: true;
+  completedPaths?: string[];
   writtenFileCount: number;
   safeDeletedFileCount: number;
   skippedLocalChangeCount: number;
   unchangedFileCount: number;
 }
 
-export interface PullSyncApplyFailure {
+export interface PullSyncApplyFailure extends StorageProgress {
+  safeDeletedFileCount: number;
   ok: false;
   reason: "storage-error";
   message: string;
@@ -106,11 +110,12 @@ function buildParentFolderPaths(vaultPath: string): string[] {
   return parentFolderPaths;
 }
 
-function buildMarkdownStorageErrorFailure(): WriteMarkdownPagesFailure {
+function buildMarkdownStorageErrorFailure(progress: StorageProgress): WriteMarkdownPagesFailure {
   return {
     ok: false,
     reason: "storage-error",
-    message: "Markdown 파일을 저장할 수 없습니다."
+    message: "Markdown 파일을 저장할 수 없습니다.",
+    ...progress
   };
 }
 
@@ -119,9 +124,14 @@ export async function writeMarkdownPages(
   files: PageMarkdownFile[]
 ): Promise<WriteMarkdownPagesResult> {
   const ensuredFolderPaths = new Set<string>();
+  const completedPaths: string[] = [];
+  let failedPath: string | null = null;
+  let stage = "mkdir";
 
   try {
     for (const file of files) {
+      failedPath = file.vaultPath;
+      stage = "mkdir";
       for (const parentFolderPath of buildParentFolderPaths(file.vaultPath)) {
         if (ensuredFolderPaths.has(parentFolderPath)) {
           continue;
@@ -132,15 +142,17 @@ export async function writeMarkdownPages(
         ensuredFolderPaths.add(parentFolderPath);
       }
 
+      stage = "write";
       await storage.write(file.vaultPath, file.content);
+      completedPaths.push(file.vaultPath);
     }
 
     return {
       ok: true,
       writtenFileCount: files.length
     };
-  } catch {
-    return buildMarkdownStorageErrorFailure();
+  } catch (error) {
+    return buildMarkdownStorageErrorFailure(storageFailureProgress(error, completedPaths, failedPath, stage));
   }
 }
 
@@ -194,32 +206,47 @@ export async function applyPullSyncPlan(
   storage: ProjectStorageAdapter,
   plan: PullSyncPlan
 ): Promise<PullSyncApplyResult> {
+  let writtenFileCount = 0;
+  let safeDeletedFileCount = 0;
+  const completedPaths: string[] = [];
+  let failedPath: string | null = null;
+  let stage = "write";
   try {
     const writeResult = await writeMarkdownPages(storage, plan.filesToWrite);
 
     if (!writeResult.ok) {
-      return buildPullSyncApplyStorageErrorFailure();
+      return { ...buildPullSyncApplyStorageErrorFailure(), ...writeResult, message: "Pull 결과를 로컬 파일에 적용할 수 없습니다.", safeDeletedFileCount: 0 };
     }
 
+    writtenFileCount = writeResult.writtenFileCount;
+    completedPaths.push(...plan.filesToWrite.map((file) => file.vaultPath));
+
     for (const moveOperation of plan.filesToMoveToSafeDelete) {
+      failedPath = moveOperation.fromPath;
+      stage = "mkdir";
       const availableToPath = await createAvailableMoveDestinationPath(storage, moveOperation.toPath);
 
       for (const parentFolderPath of buildParentFolderPaths(availableToPath)) {
         await ensureFolderExists(storage, parentFolderPath);
       }
 
+      stage = "move";
       await storage.rename(moveOperation.fromPath, availableToPath);
+      safeDeletedFileCount += 1;
+      completedPaths.push(availableToPath);
     }
 
     return {
       ok: true,
+      completedPaths,
       writtenFileCount: plan.filesToWrite.length,
       safeDeletedFileCount: plan.filesToMoveToSafeDelete.length,
       skippedLocalChangeCount: plan.skippedLocalChanges.length,
       unchangedFileCount: plan.unchangedFileCount
     };
-  } catch {
-    return buildPullSyncApplyStorageErrorFailure();
+  } catch (error) {
+    return { ...buildPullSyncApplyStorageErrorFailure(),
+      ...storageFailureProgress(error, completedPaths, failedPath, stage), writtenFileCount, safeDeletedFileCount };
   }
 }
 
@@ -344,7 +371,8 @@ function buildPullSyncApplyStorageErrorFailure(): PullSyncApplyFailure {
   return {
     ok: false,
     reason: "storage-error",
-    message: "Pull 결과를 로컬 파일에 적용할 수 없습니다."
+    message: "Pull 결과를 로컬 파일에 적용할 수 없습니다.",
+    ...storageFailureProgress(undefined, [], null, "prepare"), safeDeletedFileCount: 0
   };
 }
 
