@@ -211,6 +211,7 @@ describe("buildPageMarkdownFiles", () => {
     });
     const root: ConfluencePageTreeNode = { ...rootPage, children: [] };
     const availableHtmlAttachmentFile = {
+      versionNumber: 2,
       attachmentFileId: "att-html::0",
       pageId: "100",
       pageTitle: "Root",

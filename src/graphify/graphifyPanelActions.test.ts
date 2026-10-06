@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GraphifyAvailability, GraphifyOutputFileState, GraphifyRunOptions } from "./graphifyCli";
+import type { GraphifyAvailability, GraphifyOutputFileState, GraphifyRunOptions, GraphifyRunStatus } from "./graphifyCli";
 import { createCachedGraphifyAvailabilityChecker, openGraphifyOutputFile, runGraphifyForProject } from "./graphifyPanelActions";
 
 describe("createCachedGraphifyAvailabilityChecker", () => {
@@ -135,7 +135,7 @@ describe("runGraphifyForProject", () => {
   });
 
   it("fails after a successful process exit when graphify output files are missing", async () => {
-    const setStatus = vi.fn(() => Promise.resolve());
+    const setStatus = vi.fn<(status: GraphifyRunStatus) => Promise<void>>(() => Promise.resolve());
     const showNotice = vi.fn();
     const writeGraphifyRunLog = vi.fn(() => Promise.resolve());
     const runExecutable = vi.fn((_executable: string, _args: string[], options: GraphifyRunOptions) => {

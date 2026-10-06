@@ -102,27 +102,56 @@ export async function updatePluginFromLatestRelease(input: UpdatePluginFromLates
   const { version } = validatePluginManifestContent(new TextDecoder().decode(manifestBytes), input.pluginId);
 
   await input.fileSystem.mkdir(input.temporaryDirectoryPath, { recursive: true });
+  const backupDirectoryPath = input.joinPath(input.temporaryDirectoryPath, "backup");
+  let preserveBackup = false;
 
-  for (const asset of selectedAssets) {
-    const data = downloadedAssets.get(asset.name);
+  try {
+    for (const asset of selectedAssets) {
+      const data = downloadedAssets.get(asset.name);
 
-    if (data === undefined) {
-      throw new Error(`다운로드한 플러그인 파일을 찾을 수 없습니다: ${asset.name}`);
+      if (data === undefined) {
+        throw new Error(`다운로드한 플러그인 파일을 찾을 수 없습니다: ${asset.name}`);
+      }
+
+      await input.fileSystem.writeFile(input.joinPath(input.temporaryDirectoryPath, asset.name), data);
     }
 
-    await input.fileSystem.writeFile(input.joinPath(input.temporaryDirectoryPath, asset.name), data);
+    await input.fileSystem.mkdir(backupDirectoryPath, { recursive: true });
+
+    // 모든 기존 파일의 백업이 끝나기 전에는 설치 파일을 교체하지 않는다.
+    for (const asset of selectedAssets) {
+      await input.fileSystem.copyFile(
+        input.joinPath(input.pluginDirectoryPath, asset.name),
+        input.joinPath(backupDirectoryPath, asset.name)
+      );
+    }
+
+    try {
+      for (const asset of selectedAssets) {
+        await input.fileSystem.copyFile(
+          input.joinPath(input.temporaryDirectoryPath, asset.name),
+          input.joinPath(input.pluginDirectoryPath, asset.name)
+        );
+      }
+    } catch (error) {
+      // 하나의 복구가 실패해도 나머지 파일은 모두 복구를 시도한다.
+      const restored = await Promise.allSettled(selectedAssets.map((asset) => input.fileSystem.copyFile(
+        input.joinPath(backupDirectoryPath, asset.name),
+        input.joinPath(input.pluginDirectoryPath, asset.name)
+      )));
+
+      if (restored.some((result) => result.status === "rejected")) {
+        preserveBackup = true;
+        throw new Error(`플러그인 업데이트와 복구에 실패했습니다. 기존 파일 백업: ${backupDirectoryPath}`, { cause: error });
+      }
+
+      throw new Error("플러그인 업데이트에 실패하여 기존 파일을 복구했습니다.", { cause: error });
+    }
+  } finally {
+    if (!preserveBackup) {
+      await input.fileSystem.rm(input.temporaryDirectoryPath, { recursive: true, force: true });
+    }
   }
-
-  await input.fileSystem.mkdir(input.pluginDirectoryPath, { recursive: true });
-
-  for (const asset of selectedAssets) {
-    await input.fileSystem.copyFile(
-      input.joinPath(input.temporaryDirectoryPath, asset.name),
-      input.joinPath(input.pluginDirectoryPath, asset.name)
-    );
-  }
-
-  await input.fileSystem.rm(input.temporaryDirectoryPath, { recursive: true, force: true });
 
   return {
     version,

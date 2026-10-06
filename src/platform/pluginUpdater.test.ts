@@ -1,3 +1,6 @@
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_PLUGIN_RELEASE_REPOSITORY,
@@ -143,12 +146,80 @@ describe("updatePluginFromLatestRelease", () => {
       "write /tmp/confluence-obsidian-sync-update/main.js",
       "write /tmp/confluence-obsidian-sync-update/manifest.json",
       "write /tmp/confluence-obsidian-sync-update/styles.css",
-      "mkdir /vault/.obsidian/plugins/confluence-obsidian-sync",
+      "mkdir /tmp/confluence-obsidian-sync-update/backup",
+      "copy /vault/.obsidian/plugins/confluence-obsidian-sync/main.js /tmp/confluence-obsidian-sync-update/backup/main.js",
+      "copy /vault/.obsidian/plugins/confluence-obsidian-sync/manifest.json /tmp/confluence-obsidian-sync-update/backup/manifest.json",
+      "copy /vault/.obsidian/plugins/confluence-obsidian-sync/styles.css /tmp/confluence-obsidian-sync-update/backup/styles.css",
       "copy /tmp/confluence-obsidian-sync-update/main.js /vault/.obsidian/plugins/confluence-obsidian-sync/main.js",
       "copy /tmp/confluence-obsidian-sync-update/manifest.json /vault/.obsidian/plugins/confluence-obsidian-sync/manifest.json",
       "copy /tmp/confluence-obsidian-sync-update/styles.css /vault/.obsidian/plugins/confluence-obsidian-sync/styles.css",
       "rm /tmp/confluence-obsidian-sync-update"
     ]);
     expect(operations.some((operation) => operation.includes("data.json"))).toBe(false);
+  });
+
+  it.each(["backup", "replace", "restore"] as const)("preserves original files on %s failure", async (failure) => {
+    const root = await mkdtemp(join(tmpdir(), "confluence-update-test-"));
+    const pluginDirectoryPath = join(root, "plugin");
+    const temporaryDirectoryPath = join(root, "update");
+    const names = ["main.js", "manifest.json", "styles.css"];
+
+    try {
+      await mkdir(pluginDirectoryPath);
+
+      for (const name of [...names, "data.json"]) {
+        await writeFile(join(pluginDirectoryPath, name), `original ${name}`);
+      }
+
+      const result = updatePluginFromLatestRelease({
+        repository: "Sharknia/confluence-obsidian-sync",
+        pluginId: "confluence-obsidian-sync",
+        pluginDirectoryPath,
+        temporaryDirectoryPath,
+        requestJson: () => Promise.resolve({
+          assets: names.map((name) => ({ name, browser_download_url: `https://example.com/${name}` }))
+        }),
+        requestArrayBuffer: (url) => Promise.resolve(toArrayBuffer(url.endsWith("manifest.json")
+          ? JSON.stringify({ id: "confluence-obsidian-sync", version: "0.1.63" })
+          : "new bundle")),
+        fileSystem: {
+          mkdir: async (path, options) => { await mkdir(path, options); },
+          writeFile,
+          rm,
+          copyFile: async (from, to) => {
+            if (failure === "backup" && to === join(temporaryDirectoryPath, "backup", "styles.css")) {
+              throw new Error("backup failed");
+            }
+            if (failure !== "backup" && from === join(temporaryDirectoryPath, "manifest.json")) {
+              await writeFile(to, "partial copy");
+              throw new Error("replacement failed");
+            }
+            if (failure === "restore" && from === join(temporaryDirectoryPath, "backup", "main.js")) {
+              throw new Error("restore failed");
+            }
+            await copyFile(from, to);
+          }
+        },
+        joinPath: join
+      });
+
+      await expect(result).rejects.toThrow(failure === "backup" ? "backup failed"
+        : failure === "replace" ? "기존 파일을 복구했습니다"
+        : `기존 파일 백업: ${join(temporaryDirectoryPath, "backup")}`);
+
+      for (const name of [...names, "data.json"]) {
+        if (failure === "restore" && name === "main.js") {
+          expect(await readFile(join(temporaryDirectoryPath, "backup", name), "utf8")).toBe(`original ${name}`);
+        } else {
+          expect(await readFile(join(pluginDirectoryPath, name), "utf8")).toBe(`original ${name}`);
+        }
+      }
+
+      if (failure !== "restore") {
+        await expect(readFile(join(temporaryDirectoryPath, "backup", "main.js"))).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -43,6 +43,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -69,6 +70,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -102,6 +104,7 @@ describe("writeHtmlAttachmentFiles", () => {
       const files: HtmlAttachmentFileToWrite[] = [
         {
           attachmentFileId: "att-1::0",
+          versionNumber: 1,
           pageId: "100",
           pageTitle: "Root",
           attachmentId: "att-1",
@@ -128,6 +131,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -138,6 +142,7 @@ describe("writeHtmlAttachmentFiles", () => {
       },
       {
         attachmentFileId: "att-2::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-2",
@@ -168,6 +173,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",

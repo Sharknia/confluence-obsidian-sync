@@ -273,7 +273,12 @@ export async function runPullTreeCommand({
           remoteFiles: markdownPlanBuildResult.files,
           localFiles: localMarkdownFiles.files
         },
-        { forceOverwriteLocalChanges: mode === "force" }
+        {
+          forceOverwriteLocalChanges: mode === "force",
+          allowSafeDelete: result.errors.length === 0 && !markdownPlanBuildResult.conversionIssues.some(
+            (issue) => issue.severity === "error"
+          )
+        }
       );
       const preliminarySkippedLocalChangePageIds = new Set(
         preliminarySyncPlan.skippedLocalChanges.map((file) => file.pageId)
@@ -322,7 +327,12 @@ export async function runPullTreeCommand({
           remoteFiles: markdownFiles,
           localFiles: localMarkdownFiles.files
         },
-        { forceOverwriteLocalChanges: mode === "force" }
+        {
+          forceOverwriteLocalChanges: mode === "force",
+          allowSafeDelete: result.errors.length === 0 && !markdownBuildResult.conversionIssues.some(
+            (issue) => issue.severity === "error"
+          )
+        }
       );
 
       const writableHtmlAttachmentFiles = htmlAttachmentFilesToWrite.filter(
@@ -522,7 +532,7 @@ function buildExistingPagePathById(localMarkdownFiles: Array<{ vaultPath: string
 }
 
 function collectPagesForHtmlAttachmentFetch(
-  root: ConfluenceRootContentTreeResult["root"],
+  root: Extract<ConfluenceRootContentTreeResult, { ok: true }>["root"],
   pages: ConfluencePageTreePage[]
 ): ConfluencePageTreePage[] {
   const pagesById = new Map<string, ConfluencePageTreePage>();
@@ -538,7 +548,7 @@ function collectPagesForHtmlAttachmentFetch(
   return Array.from(pagesById.values());
 }
 
-function isConfluencePageTreeNode(root: ConfluenceRootContentTreeResult["root"]): root is ConfluencePageTreeNode {
+function isConfluencePageTreeNode(root: Extract<ConfluenceRootContentTreeResult, { ok: true }>["root"]): root is ConfluencePageTreeNode {
   return "pageId" in root;
 }
 

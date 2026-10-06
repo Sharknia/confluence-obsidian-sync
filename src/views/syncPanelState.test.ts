@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
-import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, type ConfluenceSyncSettings } from "../settings/defaultSettings";
 import { buildSyncPanelState } from "./syncPanelState";
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
   return {
+    ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
     confluenceBaseUrl: "https://selta.atlassian.net",
     userEmail: "owner@example.com",
     apiToken: "secret-token",
@@ -327,7 +328,7 @@ describe("buildSyncPanelState", () => {
           message: "graphify 실행 파일을 찾았습니다: graphify"
         })),
         checkAgentRunner: vi.fn(() => Promise.resolve({
-          runner: "claude",
+          runner: "claude" as const,
           runnerExecutable: "claude",
           skillInstalled: true,
           message: "Claude Code graphify skill 사용 가능"
@@ -357,7 +358,7 @@ describe("buildSyncPanelState", () => {
           message: "graphify 실행 파일을 찾았습니다: graphify"
         })),
         checkAgentRunner: vi.fn(() => Promise.resolve({
-          runner: "opencode",
+          runner: "opencode" as const,
           runnerExecutable: "opencode",
           skillInstalled: true,
           message: "OpenCode graphify skill 사용 가능"

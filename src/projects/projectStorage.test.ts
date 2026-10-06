@@ -533,6 +533,7 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 2,
     };
     const { calls, storage } = createStorageMock();
@@ -560,6 +561,7 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 0,
     };
     const { storage } = createStorageMock({
@@ -583,6 +585,7 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 0,
     };
     const { calls, storage } = createStorageMock({
