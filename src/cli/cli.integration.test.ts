@@ -40,11 +40,17 @@ beforeAll(async () => {
   installRoot = await mkdtemp(join(tmpdir(), "confluence 설치 "));
   const prefix = join(installRoot, "사용자 prefix");
   const bin = windows ? prefix : join(prefix, "bin");
-  installEnvironment = { ...process.env, npm_config_prefix: prefix, npm_config_cache: join(installRoot, "cache"),
+  const inheritedEnvironment = { ...process.env };
+  // Windows의 환경 변수 이름은 대소문자를 구별하지 않으므로 기존 npm 설정을 제거한다.
+  for (const key of Object.keys(inheritedEnvironment)) {
+    if (/^npm_config_(prefix|cache|userconfig|globalconfig|offline|audit|fund|registry)$/iu.test(key)) delete inheritedEnvironment[key];
+  }
+  installEnvironment = { ...inheritedEnvironment, npm_config_prefix: prefix, npm_config_cache: join(installRoot, "cache"),
     npm_config_userconfig: join(installRoot, "user.npmrc"), npm_config_globalconfig: join(installRoot, "global.npmrc"),
     npm_config_offline: "true", npm_config_audit: "false", npm_config_fund: "false", npm_config_registry: "http://127.0.0.1:9",
     PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` };
   await Promise.all([writeFile(installEnvironment.npm_config_userconfig!, ""), writeFile(installEnvironment.npm_config_globalconfig!, "")]);
+  expect(resolve((await npm(["prefix", "--global"])).stdout.trim())).toBe(resolve(prefix));
   await execute(process.execPath, ["esbuild.cli.config.mjs"], { cwd });
   const archive = await packageCli(cwd);
   const download = join(installRoot, "받은 vault/cli");
@@ -361,7 +367,9 @@ describe("standalone CLI", () => {
 
 describe("vault CLI distribution", () => {
   it("ships only standalone files with license notices and runs through the global entrypoint", async () => {
-    const files = (await execute("tar", ["-tzf", join(installRoot, "이동한 vault/cli/confluence-sync-cli.tgz")])).stdout.trim().split("\n").sort();
+    // Windows 기본 tar의 유니코드 인자 제한을 피하고 압축 내용만 검사한다.
+    await copyFile(join(installRoot, "이동한 vault/cli/confluence-sync-cli.tgz"), join(installRoot, "inspect.tgz"));
+    const files = (await execute("tar", ["-tzf", "inspect.tgz"], { cwd: installRoot })).stdout.trim().split(/\r?\n/u).sort();
     expect(files).toEqual(["LICENSE", "README.md", "THIRD-PARTY-NOTICES.txt", "cli.mjs", "package.json"].map((name) => `package/${name}`).sort());
     const prefix = installEnvironment.npm_config_prefix!;
     const directory = join(prefix, windows ? "node_modules" : "lib/node_modules", "confluence-obsidian-sync-cli");
