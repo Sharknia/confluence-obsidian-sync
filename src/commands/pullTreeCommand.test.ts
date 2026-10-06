@@ -1,3 +1,4 @@
+import * as storageToMarkdown from "../markdown/confluenceStorageToMarkdown";
 import { describe, expect, it, vi } from "vitest";
 import {
   runPullTreeCommand,
@@ -6,7 +7,7 @@ import {
 } from "./pullTreeCommand";
 import { calculateMarkdownBodyHash, createPageMarkdownContent, type PageHtmlAttachmentFile } from "../projects/pageMarkdown";
 import type { ProjectStorageAdapter } from "../projects/projectStorage";
-import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, type ConfluenceSyncSettings, type CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 
 interface StorageMock extends ProjectStorageAdapter {
   writtenFiles: Array<{ path: string; data: string }>;
@@ -15,6 +16,7 @@ interface StorageMock extends ProjectStorageAdapter {
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
   return {
+    ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
     confluenceBaseUrl: "https://selta.atlassian.net",
     userEmail: "owner@example.com",
     apiToken: "secret-token",
@@ -72,7 +74,7 @@ const fetchNoHtmlAttachments: PullTreeHtmlAttachmentFetcher = () =>
 
 type RunPullTreeCommandInput = Parameters<typeof runPullTreeCommand>[0];
 
-function runPullTreeCommandForTest(input: RunPullTreeCommandInput): Promise<void> {
+function runPullTreeCommandForTest(input: RunPullTreeCommandInput): ReturnType<typeof runPullTreeCommand> {
   return runPullTreeCommand({
     fetchHtmlAttachments: fetchNoHtmlAttachments,
     ...input
@@ -1133,7 +1135,13 @@ ${localBody}`;
     expect(notices[0]).toContain("강제 덮어쓰기 1개");
   });
 
-  it("Confluence에서 사라진 파일은 안전 삭제 폴더로 이동한다", async () => {
+  it.each([
+    { mode: "normal", issue: "none" },
+    { mode: "normal", issue: "fetch" },
+    { mode: "force", issue: "fetch" },
+    { mode: "normal", issue: "conversion" },
+    { mode: "force", issue: "conversion" }
+  ] as const)("$mode Pull에서 조회·변환 실패 여부에 따라 안전 삭제를 판단한다: $issue", async ({ mode, issue }) => {
     const notices: string[] = [];
     const openedReports: string[] = [];
     const existingBody = "Old body\n";
@@ -1169,28 +1177,48 @@ ${existingBody}`)
         ok: true,
         root: { ...rootPage, children: [] },
         pages: [rootPage],
-        errors: []
+        errors: issue === "fetch" ? [{ pageId: "999", title: "Removed", reason: "network-error", message: "페이지 조회 실패" }] : []
       });
     };
 
-    await runPullTreeCommandForTest({
-      settings: createSettings(),
-      storage,
-      fetchTree,
-      showNotice: (message) => notices.push(message),
-      openReport: (path) => {
-        openedReports.push(path);
-        return Promise.resolve();
-      }
-    });
+    const conversion = issue === "conversion"
+      ? vi.spyOn(storageToMarkdown, "convertConfluenceStorageToMarkdown").mockImplementation(() => {
+          throw new Error("페이지 변환 실패");
+        })
+      : null;
 
-    expect(storage.movedFiles[0]?.fromPath).toBe("confluence/Root/Removed.md");
-    expect(storage.movedFiles[0]?.toPath).toContain("confluence/Root/.confluence-sync/trash/");
-    expect(storage.movedFiles[0]?.toPath).toContain("/Removed.md");
+    try {
+      await runPullTreeCommandForTest({
+        settings: createSettings(),
+        mode,
+        confirmForcePull: () => true,
+        storage,
+        fetchTree,
+        showNotice: (message) => notices.push(message),
+        openReport: (path) => {
+          openedReports.push(path);
+          return Promise.resolve();
+        }
+      });
+    } finally {
+      conversion?.mockRestore();
+    }
+
     expect(openedReports).toEqual(["logs/latest.md"]);
-    expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/Removed.md]]");
-    expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/.confluence-sync/trash/");
-    expect(notices).toEqual(["Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 1개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
+
+    if (issue !== "none") {
+      expect(storage.movedFiles).toEqual([]);
+      expect(getPullReportWrites(storage)[0]?.data).toContain(issue === "fetch" ? "페이지 조회 실패" : "페이지 변환 실패");
+      expect(notices.at(-1)).toContain("안전 삭제 0개");
+      expect(notices.at(-1)).toContain(issue === "fetch" ? "조회 실패 1개" : "변환 실패 1개");
+    } else {
+      expect(storage.movedFiles[0]?.fromPath).toBe("confluence/Root/Removed.md");
+      expect(storage.movedFiles[0]?.toPath).toContain("confluence/Root/.confluence-sync/trash/");
+      expect(storage.movedFiles[0]?.toPath).toContain("/Removed.md");
+      expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/Removed.md]]");
+      expect(getPullReportWrites(storage)[0]?.data).toContain("[[confluence/Root/.confluence-sync/trash/");
+      expect(notices).toEqual(["Pull 완료: 추가 1개, 갱신 0개, 안전 삭제 1개, 로컬 수정 스킵 0개, 변경 없음 0개"]);
+    }
   });
 
   it("로컬 Markdown 목록을 읽을 수 없으면 목록 조회 실패 Notice를 안내한다", async () => {
@@ -1248,7 +1276,7 @@ ${existingBody}`)
     expect(storage.writtenFiles).toEqual([]);
   });
 
-  it("페이지 트리 조회 중 예기치 못한 오류가 발생하면 Notice와 console.error를 남긴다", async () => {
+  it("예기치 못한 오류의 원문을 출력하지 않고 실패 결과를 반환한다", async () => {
     const notices: string[] = [];
     const storage = createStorageMock();
     const unexpectedError = new Error("unexpected failure");
@@ -1263,11 +1291,8 @@ ${existingBody}`)
         showNotice: (message) => notices.push(message)
       });
 
-      expect(notices).toEqual(["unexpected failure"]);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Pull Tree 실행 중 예기치 못한 오류가 발생했습니다.",
-        unexpectedError
-      );
+      expect(notices).toEqual(["Confluence 페이지 트리 조회 중 오류가 발생했습니다."]);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
     } finally {
       consoleErrorSpy.mockRestore();
     }

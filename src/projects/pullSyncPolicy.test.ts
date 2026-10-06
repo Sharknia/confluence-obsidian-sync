@@ -123,6 +123,20 @@ describe("createPullSyncPlan", () => {
     ]);
   });
 
+  it("keeps missing local pages while still writing remote pages when safe deletion is deferred", () => {
+    const remoteFile = createRemoteFile({ pageId: "100", vaultPath: "confluence/Root/Root.md", body: "Remote\n" });
+    const localFile = createLocalFile("confluence/Root/Missing.md", "999", "Old body\n");
+    const plan = createPullSyncPlan({
+      projectRootPath: "confluence/Root",
+      safeDeleteRootPath: "confluence/Root/.confluence-sync/trash/now",
+      remoteFiles: [remoteFile],
+      localFiles: [localFile]
+    }, { allowSafeDelete: false });
+
+    expect(plan.filesToWrite).toEqual([{ ...remoteFile, operation: "create" }]);
+    expect(plan.filesToMoveToSafeDelete).toEqual([]);
+  });
+
   it("moves disappeared legacy files without a content hash to the safe delete folder", () => {
     const localFile: LocalMarkdownFileSnapshot = {
       vaultPath: "confluence/Root/Legacy Removed.md",

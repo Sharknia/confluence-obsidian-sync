@@ -438,7 +438,8 @@ describe("writeMarkdownPages", () => {
     expect(result).toEqual({
       ok: false,
       reason: "storage-error",
-      message: "Markdown 파일을 저장할 수 없습니다."
+      message: "Markdown 파일을 저장할 수 없습니다.",
+      writtenFileCount: 0, completedPaths: [], failedPath: "confluence/Root/Root.md", failedStage: "write", outcomeUnknown: true
     });
     expect(calls).toEqual([
       "exists:confluence",
@@ -533,13 +534,14 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 2,
     };
     const { calls, storage } = createStorageMock();
 
     const result = await applyPullSyncPlan(storage, plan);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       writtenFileCount: 1,
       safeDeletedFileCount: 1,
@@ -560,6 +562,7 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 0,
     };
     const { storage } = createStorageMock({
@@ -570,6 +573,7 @@ describe("applyPullSyncPlan", () => {
       ok: false,
       reason: "storage-error",
       message: "Pull 결과를 로컬 파일에 적용할 수 없습니다.",
+      writtenFileCount: 0, safeDeletedFileCount: 0, completedPaths: [], failedPath: "confluence/Root/Removed.md", failedStage: "move", outcomeUnknown: true,
     });
   });
 
@@ -583,6 +587,7 @@ describe("applyPullSyncPlan", () => {
         },
       ],
       skippedLocalChanges: [],
+      overwrittenLocalChanges: [],
       unchangedFileCount: 0,
     };
     const { calls, storage } = createStorageMock({
@@ -591,7 +596,7 @@ describe("applyPullSyncPlan", () => {
 
     const result = await applyPullSyncPlan(storage, plan);
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: true,
       writtenFileCount: 0,
       safeDeletedFileCount: 1,

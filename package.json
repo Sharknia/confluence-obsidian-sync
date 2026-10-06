@@ -1,21 +1,25 @@
 {
   "name": "confluence-obsidian-sync",
-  "version": "0.1.62",
+  "version": "0.1.64",
   "description": "Confluence 문서를 Obsidian 로컬 Markdown 작업 사본으로 동기화하는 플러그인",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node esbuild.config.mjs && node scripts/copy-plugin-assets.mjs",
+    "build": "node esbuild.config.mjs && node scripts/copy-plugin-assets.mjs && pnpm run build:cli",
     "lint": "eslint .",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "smoke:graphify": "node scripts/smoke-graphify-output.mjs",
     "package:plugin": "pnpm run build && node scripts/package-plugin.mjs",
     "prepare:current-vault": "pnpm run build && node scripts/prepare-current-vault.mjs",
     "prepare:vault": "pnpm run build && node scripts/prepare-vault-template.mjs",
-    "verify": "pnpm run lint && pnpm run test && pnpm run build",
-    "release:local": "pnpm run verify && pnpm run package:plugin"
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "release:local": "pnpm run verify && pnpm run package:plugin",
+    "build:cli": "node esbuild.cli.config.mjs",
+    "cli": "node dist/cli.mjs",
+    "package:cli": "pnpm run build:cli && node scripts/package-cli.mjs"
   },
   "keywords": [
     "obsidian",

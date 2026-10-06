@@ -1,3 +1,6 @@
+import { StorageGuardError, type StorageProgress } from "../projects/storageFailure";
+import { finishCommand, type CommandResult } from "./commandResult";
+import { requireRequestTransport, type ConfluenceRequestTransport } from "../confluence/requestTransport";
 import { getMissingConfluenceConnectionFields, type RequiredConfluenceConnectionField } from "../confluence/authentication";
 import {
   downloadConfluenceHtmlAttachment,
@@ -19,8 +22,7 @@ import {
   calculateMarkdownBodyHash,
   parsePageMarkdownMetadata,
   type PageHtmlAttachmentFile,
-  type PageMarkdownConversionIssue,
-  type PageMarkdownFile
+  type PageMarkdownConversionIssue
 } from "../projects/pageMarkdown";
 import { buildPullReportPath } from "../projects/pullReport";
 import { createPullSyncPlan } from "../projects/pullSyncPolicy";
@@ -28,7 +30,7 @@ import {
   applyPullSyncPlan,
   listProjectMarkdownFiles,
   type ProjectStorageAdapter,
-  type PullSyncApplyResult
+  type PullSyncApplySuccess
 } from "../projects/projectStorage";
 import type { ConfluenceSyncSettings, CurrentConfluenceProjectSettings } from "../settings/defaultSettings";
 
@@ -56,6 +58,7 @@ export type PullTreeHtmlAttachmentDownloader = (
 export interface RunPullTreeCommandInput {
   settings: ConfluenceSyncSettings;
   storage: ProjectStorageAdapter;
+  transport?: ConfluenceRequestTransport;
   fetchTree?: PullTreeFetcher;
   fetchHtmlAttachments?: PullTreeHtmlAttachmentFetcher;
   downloadHtmlAttachment?: PullTreeHtmlAttachmentDownloader;
@@ -91,14 +94,15 @@ function buildForcePullConfirmationMessage(changedLocalFileCount: number): strin
   return `${forcePullConfirmationMessage}\n\n로컬 변경사항: ${changedLocalFileCount}건`;
 }
 
+export function createPullTreeDependencies(transport?: ConfluenceRequestTransport) {
 const defaultPullTreeFetcher: PullTreeFetcher = async (settings, rootContentType, rootContentId) => {
-  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
+  const requestTransport = requireRequestTransport(transport);
 
-  return fetchConfluenceRootContentTree(settings, rootContentType, rootContentId, createObsidianRequestTransport);
+  return fetchConfluenceRootContentTree(settings, rootContentType, rootContentId, requestTransport);
 };
 
 const defaultPullTreeHtmlAttachmentFetcher: PullTreeHtmlAttachmentFetcher = async (settings, pages) => {
-  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
+  const requestTransport = requireRequestTransport(transport);
   const htmlAttachmentsByPageId = new Map<string, ConfluenceHtmlAttachment[]>();
   const issues: PageMarkdownConversionIssue[] = [];
 
@@ -107,7 +111,7 @@ const defaultPullTreeHtmlAttachmentFetcher: PullTreeHtmlAttachmentFetcher = asyn
       settings,
       page.pageId,
       page.title,
-      createObsidianRequestTransport
+      requestTransport
     );
 
     if (result.attachments.length > 0) {
@@ -121,7 +125,7 @@ const defaultPullTreeHtmlAttachmentFetcher: PullTreeHtmlAttachmentFetcher = asyn
 };
 
 const defaultPullTreeHtmlAttachmentDownloader: PullTreeHtmlAttachmentDownloader = async (settings, file) => {
-  const { createObsidianRequestTransport } = await import("../confluence/obsidianRequestTransport");
+  const requestTransport = requireRequestTransport(transport);
   const attachment: ConfluenceHtmlAttachment = {
     id: file.attachmentId,
     pageId: file.pageId,
@@ -132,7 +136,7 @@ const defaultPullTreeHtmlAttachmentDownloader: PullTreeHtmlAttachmentDownloader 
     downloadLink: file.downloadLink,
     versionNumber: file.versionNumber
   };
-  const result = await downloadConfluenceHtmlAttachment(settings, attachment, createObsidianRequestTransport);
+  const result = await downloadConfluenceHtmlAttachment(settings, attachment, requestTransport);
 
   if (!result.ok) {
     return { ok: false, issue: toAttachmentConversionIssue(result.issue) };
@@ -141,260 +145,128 @@ const defaultPullTreeHtmlAttachmentDownloader: PullTreeHtmlAttachmentDownloader 
   return { ok: true, file: { ...file, html: result.html } };
 };
 
+  return { fetchTree: defaultPullTreeFetcher, fetchHtmlAttachments: defaultPullTreeHtmlAttachmentFetcher, downloadHtmlAttachment: defaultPullTreeHtmlAttachmentDownloader };
+}
+
 export async function runPullTreeCommand({
-  settings,
-  storage,
-  fetchTree = defaultPullTreeFetcher,
-  fetchHtmlAttachments = defaultPullTreeHtmlAttachmentFetcher,
-  downloadHtmlAttachment = defaultPullTreeHtmlAttachmentDownloader,
-  ensureCurrentProject,
-  mode = "normal",
-  confirmForcePull,
-  showNotice,
-  openReport
-}: RunPullTreeCommandInput): Promise<void> {
+  settings, storage, transport,
+  fetchTree = createPullTreeDependencies(transport).fetchTree,
+  fetchHtmlAttachments = createPullTreeDependencies(transport).fetchHtmlAttachments,
+  downloadHtmlAttachment = createPullTreeDependencies(transport).downloadHtmlAttachment,
+  ensureCurrentProject, mode = "normal", confirmForcePull, showNotice, openReport
+}: RunPullTreeCommandInput): Promise<CommandResult> {
   const missingFields = getMissingConfluenceConnectionFields(settings);
-
   if (missingFields.length > 0) {
-    showNotice(
-      `Pull Tree 실행 전에 Confluence 연결 설정이 필요합니다: ${missingFields
-        .map(toSettingsFieldName)
-        .join(", ")}`
-    );
-    return;
+    return finishCommand(showNotice, "error", "missing-settings",
+      `Pull Tree 실행 전에 Confluence 연결 설정이 필요합니다: ${missingFields.map(toSettingsFieldName).join(", ")}`);
   }
-
-  try {
-    const currentProject = await resolveCurrentProjectForPull({
-      settings,
-      storage,
-      ensureCurrentProject,
-      showNotice,
-      openReport
+  const counts = { created: 0, updated: 0, safeDeleted: 0, skippedLocalChanges: 0, unchanged: 0,
+    fetchFailures: 0, conversionWarnings: 0, conversionFailures: 0, attachmentFailures: 0, htmlAttachments: 0 };
+  const completedPaths: string[] = [];
+  let failedStage = "fetch";
+  let currentProject: CurrentConfluenceProjectSettings | null = null;
+  async function failure(reason: string, message: string, progress?: StorageProgress): Promise<CommandResult> {
+    const hasChanges = counts.safeDeleted > 0 || completedPaths.length > 0 || (progress?.completedPaths.length ?? 0) > 0;
+    const status = hasChanges || progress?.outcomeUnknown ? "partial" : progress?.guardReason ? "blocked" : "error";
+    const result = finishCommand(showNotice, status, progress?.guardReason ?? reason, message, {
+      counts, completedPaths: [...completedPaths, ...(progress?.completedPaths ?? [])],
+      failedStage: progress?.failedStage ?? failedStage, failedPath: progress?.failedPath ?? null,
+      reportPath: null, reportWritten: false
     });
-
-    if (currentProject === null) {
-      return;
-    }
-
-    const safeDeleteRootPath = buildSafeDeleteRootPath(
-      currentProject.localFolderPath,
-      settings.safeDeleteFolder,
-      new Date()
-    );
-    let localMarkdownFilesResult: Awaited<ReturnType<typeof listProjectMarkdownFiles>> | null = null;
-
-    try {
-      if (mode === "force") {
-        localMarkdownFilesResult = await listProjectMarkdownFiles(
-          storage,
-          currentProject.localFolderPath,
-          removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
-        );
-
-        if (!localMarkdownFilesResult.ok) {
-          showNotice(localMarkdownFilesResult.message);
-          return;
-        }
-
-        const changedLocalFiles = collectChangedLocalMarkdownFiles(localMarkdownFilesResult.files);
-        const shouldContinue =
-          confirmForcePull?.(buildForcePullConfirmationMessage(changedLocalFiles.length)) ?? true;
-
-        if (!shouldContinue) {
-          const reportPath = await writeForcePullCancelReport(storage, currentProject.localFolderPath, {
-            pulledAt: new Date(),
-            changedLocalFiles
-          });
-
-          if (openReport !== undefined) {
-            try {
-              await openReport(reportPath);
-            } catch {
-              showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`);
-            }
-          }
-
-          showNotice("Force Pull을 취소했습니다. 변경된 로컬 파일 목록을 리포트로 남겼습니다.");
-          return;
-        }
-      }
-    } catch {
-      showNotice("Markdown 파일을 저장할 수 없습니다.");
-      return;
-    }
-
-    const result = await fetchTree(settings, currentProject.rootContentType, currentProject.rootContentId);
-
-    if (!result.ok) {
-      showNotice(result.message);
-      return;
-    }
-
-    let markdownFiles: PageMarkdownFile[];
-    let writeResult: PullSyncApplyResult;
-    let syncPlan: ReturnType<typeof createPullSyncPlan>;
-    let conversionWarningCount = 0;
-    let conversionFailureCount = 0;
-    let htmlAttachmentCount = 0;
-
-    try {
-      if (localMarkdownFilesResult === null) {
-        localMarkdownFilesResult = await listProjectMarkdownFiles(
-          storage,
-          currentProject.localFolderPath,
-          removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath)
-        );
-      }
-
-      if (!localMarkdownFilesResult.ok) {
-        showNotice(localMarkdownFilesResult.message);
-        return;
-      }
-
-      const localMarkdownFiles = localMarkdownFilesResult;
-      const htmlAttachmentFetchResult = await fetchHtmlAttachments(
-        settings,
-        collectPagesForHtmlAttachmentFetch(result.root, result.pages)
-      );
-      const markdownPlanBuildResult = await buildPageMarkdownFiles({
-        projectRootPath: currentProject.localFolderPath,
-        root: result.root,
-        pages: result.pages,
-        existingPagePathById: buildExistingPagePathById(localMarkdownFiles.files),
-        pathExists: (path) => storage.exists(path),
-        readExistingFile: (path) => storage.read(path),
-        htmlAttachmentsByPageId: htmlAttachmentFetchResult.htmlAttachmentsByPageId
-      });
-      const preliminarySyncPlan = createPullSyncPlan(
-        {
-          projectRootPath: currentProject.localFolderPath,
-          safeDeleteRootPath,
-          remoteFiles: markdownPlanBuildResult.files,
-          localFiles: localMarkdownFiles.files
-        },
-        { forceOverwriteLocalChanges: mode === "force" }
-      );
-      const preliminarySkippedLocalChangePageIds = new Set(
-        preliminarySyncPlan.skippedLocalChanges.map((file) => file.pageId)
-      );
-      const eligibleHtmlAttachmentPageIds = new Set(
-        markdownPlanBuildResult.files
-          .map((file) => file.pageId)
-          .filter((pageId) => !preliminarySkippedLocalChangePageIds.has(pageId))
-      );
-      const htmlAttachmentFilesToWrite: HtmlAttachmentFileToWrite[] = [];
-      const htmlAttachmentDownloadIssues: PageMarkdownConversionIssue[] = [];
-
-      for (const file of markdownPlanBuildResult.htmlAttachmentFiles.filter(
-        (plannedFile) => eligibleHtmlAttachmentPageIds.has(plannedFile.pageId)
-      )) {
-        const downloadResult = await downloadHtmlAttachment(settings, file);
-
-        if (downloadResult.ok) {
-          htmlAttachmentFilesToWrite.push(downloadResult.file);
-        } else {
-          htmlAttachmentDownloadIssues.push(downloadResult.issue);
-        }
-      }
-
-      const markdownBuildResult = await buildPageMarkdownFiles({
-        projectRootPath: currentProject.localFolderPath,
-        root: result.root,
-        pages: result.pages,
-        existingPagePathById: buildExistingPagePathById(localMarkdownFiles.files),
-        pathExists: (path) => storage.exists(path),
-        readExistingFile: (path) => storage.read(path),
-        htmlAttachmentsByPageId: htmlAttachmentFetchResult.htmlAttachmentsByPageId,
-        availableHtmlAttachmentFilesByPageId: buildAvailableHtmlAttachmentFilesByPageId(htmlAttachmentFilesToWrite)
-      });
-      markdownFiles = markdownBuildResult.files;
-      const allConversionIssues = [
-        ...markdownBuildResult.conversionIssues,
-        ...htmlAttachmentFetchResult.issues,
-        ...htmlAttachmentDownloadIssues
-      ];
-
-      syncPlan = createPullSyncPlan(
-        {
-          projectRootPath: currentProject.localFolderPath,
-          safeDeleteRootPath,
-          remoteFiles: markdownFiles,
-          localFiles: localMarkdownFiles.files
-        },
-        { forceOverwriteLocalChanges: mode === "force" }
-      );
-
-      const writableHtmlAttachmentFiles = htmlAttachmentFilesToWrite.filter(
-        (file) => eligibleHtmlAttachmentPageIds.has(file.pageId)
-      );
-      const htmlWriteResult = await writeHtmlAttachmentFiles(storage, writableHtmlAttachmentFiles);
-
-      if (!htmlWriteResult.ok) {
-        showNotice(htmlWriteResult.message);
-        return;
-      }
-
-      htmlAttachmentCount = htmlWriteResult.writtenFileCount;
-
-      writeResult = await applyPullSyncPlan(storage, syncPlan);
-      conversionWarningCount = allConversionIssues.filter(
-        (issue) => issue.severity === "warning"
-      ).length;
-      conversionFailureCount = allConversionIssues.filter(
-        (issue) => issue.severity === "error"
-      ).length;
-
-      if (writeResult.ok) {
-        const reportPath = await writePullReport(storage, currentProject.localFolderPath, {
-          pulledAt: new Date(),
-          createCount: syncPlan.filesToWrite.filter((file) => file.operation === "create").length,
-          updateCount: syncPlan.filesToWrite.filter((file) => file.operation === "update").length,
-          writeResult,
-          syncPlan,
-          fetchFailureCount: result.errors.length,
-          fetchFailures: result.errors,
-          conversionIssues: allConversionIssues,
-          conversionWarningCount,
-          conversionFailureCount
+    if (!currentProject || failedStage === "fetch") return result;
+    return writeCommandFailureReport(storage, result);
+  }
+  try {
+    currentProject = await resolveCurrentProjectForPull({ settings, storage, ensureCurrentProject, showNotice, openReport });
+    if (!currentProject) return { status: "error", reason: "project-not-configured", message: "프로젝트 초기화를 완료하지 못했습니다." };
+    const safeDeleteRootPath = buildSafeDeleteRootPath(currentProject.localFolderPath, settings.safeDeleteFolder, new Date());
+    let localFiles: Awaited<ReturnType<typeof listProjectMarkdownFiles>> | null = null;
+    if (mode === "force") {
+      localFiles = await listProjectMarkdownFiles(storage, currentProject.localFolderPath, removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath));
+      if (!localFiles.ok) return failure(localFiles.reason, localFiles.message);
+      const changed = collectChangedLocalMarkdownFiles(localFiles.files);
+      if (!(confirmForcePull?.(buildForcePullConfirmationMessage(changed.length)) ?? true)) {
+        let reportPath: string | null = null;
+        try {
+          reportPath = await writeForcePullCancelReport(storage, currentProject.localFolderPath, { pulledAt: new Date(), changedLocalFiles: changed });
+          if (openReport) await openReport(reportPath).catch(() => showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`));
+        } catch { /* 취소 상태를 유지하고 기록 실패를 별도로 반환한다. */ }
+        return finishCommand(showNotice, "blocked", "confirmation-required", "Force Pull을 취소했습니다. 변경된 로컬 파일 목록을 리포트로 남겼습니다.", {
+          confirmation: { changedLocalFiles: changed.map((file) => file.vaultPath), backupRequired: false },
+          reportPath, reportWritten: reportPath !== null
         });
-
-        if (openReport !== undefined) {
-          try {
-            await openReport(reportPath);
-          } catch {
-            showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`);
-          }
-        }
       }
-    } catch {
-      showNotice("Markdown 파일을 저장할 수 없습니다.");
-      return;
     }
-
-    if (!writeResult.ok) {
-      showNotice("Pull 결과를 로컬 파일에 적용할 수 없습니다.");
-      return;
+    const tree = await fetchTree(settings, currentProject.rootContentType, currentProject.rootContentId);
+    if (!tree.ok) return failure(tree.reason, tree.message);
+    counts.fetchFailures = tree.errors.length;
+    failedStage = "prepare";
+    localFiles ??= await listProjectMarkdownFiles(storage, currentProject.localFolderPath, removeTimestampSegmentFromSafeDeletePath(safeDeleteRootPath));
+    if (!localFiles.ok) return failure(localFiles.reason, localFiles.message);
+    const attachments = await fetchHtmlAttachments(settings, collectPagesForHtmlAttachmentFetch(tree.root, tree.pages));
+    const buildInput = { projectRootPath: currentProject.localFolderPath, root: tree.root, pages: tree.pages,
+      existingPagePathById: buildExistingPagePathById(localFiles.files), pathExists: (path: string) => storage.exists(path),
+      readExistingFile: (path: string) => storage.read(path), htmlAttachmentsByPageId: attachments.htmlAttachmentsByPageId };
+    const preliminary = await buildPageMarkdownFiles(buildInput);
+    const planInput = { projectRootPath: currentProject.localFolderPath, safeDeleteRootPath, localFiles: localFiles.files };
+    const preliminaryPlan = createPullSyncPlan({ ...planInput, remoteFiles: preliminary.files }, { forceOverwriteLocalChanges: mode === "force" });
+    const skippedIds = new Set(preliminaryPlan.skippedLocalChanges.map((file) => file.pageId));
+    const htmlFiles: HtmlAttachmentFileToWrite[] = [];
+    const downloadIssues: PageMarkdownConversionIssue[] = [];
+    for (const file of preliminary.htmlAttachmentFiles.filter((file) => !skippedIds.has(file.pageId))) {
+      // download 직전의 파일 상태를 어댑터에 기록해 첨부 교체도 변경 검사를 받는다.
+      await storage.exists(file.vaultPath);
+      const downloaded = await downloadHtmlAttachment(settings, file);
+      if (downloaded.ok) htmlFiles.push(downloaded.file); else downloadIssues.push(downloaded.issue);
     }
-
-    const createCount = syncPlan.filesToWrite.filter((file) => file.operation === "create").length;
-    const updateCount = syncPlan.filesToWrite.filter((file) => file.operation === "update").length;
-    showNotice(
-      `${mode === "force" ? "Force Pull" : "Pull"} 완료: 추가 ${createCount}개, 갱신 ${updateCount}개${buildForceOverwriteNoticePart(
-        mode,
-        syncPlan.overwrittenLocalChanges.length
-      )}, 안전 삭제 ${writeResult.safeDeletedFileCount}개, 로컬 수정 스킵 ${writeResult.skippedLocalChangeCount}개, 변경 없음 ${writeResult.unchangedFileCount}개${buildSuccessNoticeSuffix(
-        result.errors.length,
-        conversionWarningCount,
-        conversionFailureCount,
-        htmlAttachmentCount
-      )}`
-    );
+    const built = await buildPageMarkdownFiles({ ...buildInput, availableHtmlAttachmentFilesByPageId: buildAvailableHtmlAttachmentFilesByPageId(htmlFiles) });
+    const issues = [...built.conversionIssues, ...attachments.issues, ...downloadIssues];
+    counts.conversionWarnings = issues.filter((issue) => issue.severity === "warning").length;
+    counts.conversionFailures = issues.filter((issue) => issue.severity === "error").length;
+    counts.attachmentFailures = attachments.issues.length + downloadIssues.length;
+    const plan = createPullSyncPlan({ ...planInput, remoteFiles: built.files }, {
+      forceOverwriteLocalChanges: mode === "force", allowSafeDelete: tree.errors.length === 0 && counts.conversionFailures === 0
+    });
+    counts.skippedLocalChanges = plan.skippedLocalChanges.length;
+    counts.unchanged = plan.unchangedFileCount;
+    failedStage = "attachments";
+    const htmlWritten = await writeHtmlAttachmentFiles(storage, htmlFiles);
+    counts.htmlAttachments = htmlWritten.writtenFileCount;
+    if (!htmlWritten.ok) return failure(htmlWritten.reason, htmlWritten.message, htmlWritten);
+    completedPaths.push(...htmlFiles.map((file) => file.vaultPath));
+    failedStage = "apply";
+    const applied = await applyPullSyncPlan(storage, plan);
+    const completedWrites = plan.filesToWrite.slice(0, applied.writtenFileCount);
+    counts.created = completedWrites.filter((file) => file.operation === "create").length;
+    counts.updated = completedWrites.filter((file) => file.operation === "update").length;
+    counts.safeDeleted = applied.safeDeletedFileCount;
+    if (!applied.ok) return failure(applied.reason, applied.message, applied);
+    completedPaths.push(...(applied.completedPaths ?? completedWrites.map((file) => file.vaultPath)));
+    failedStage = "report";
+    const reportPath = await writePullReport(storage, currentProject.localFolderPath, {
+      pulledAt: new Date(), createCount: counts.created, updateCount: counts.updated, writeResult: applied, syncPlan: plan,
+      fetchFailureCount: counts.fetchFailures, fetchFailures: tree.errors, conversionIssues: issues,
+      conversionWarningCount: counts.conversionWarnings, conversionFailureCount: counts.conversionFailures
+    });
+    if (openReport) await openReport(reportPath).catch(() => showNotice(`Pull 리포트를 열 수 없습니다: ${reportPath}`));
+    const partial = counts.fetchFailures + counts.conversionFailures + counts.attachmentFailures + counts.skippedLocalChanges > 0;
+    return finishCommand(showNotice, partial ? "partial" : completedPaths.length || counts.safeDeleted ? "success" : "unchanged",
+      partial ? "pull-incomplete" : "pulled",
+      `${mode === "force" ? "Force Pull" : "Pull"} 완료: 추가 ${counts.created}개, 갱신 ${counts.updated}개${buildForceOverwriteNoticePart(mode, plan.overwrittenLocalChanges.length)}, 안전 삭제 ${counts.safeDeleted}개, 로컬 수정 스킵 ${counts.skippedLocalChanges}개, 변경 없음 ${counts.unchanged}개${buildSuccessNoticeSuffix(counts.fetchFailures, counts.conversionWarnings, counts.conversionFailures, counts.htmlAttachments)}`,
+      { counts, completedPaths, reportPath, reportWritten: true });
   } catch (error) {
-    console.error("Pull Tree 실행 중 예기치 못한 오류가 발생했습니다.", error);
+    return failure(error instanceof StorageGuardError ? error.reason : failedStage === "report" ? "report-write-failed" : "operation-failed",
+      failedStage === "fetch" ? "Confluence 페이지 트리 조회 중 오류가 발생했습니다." : "Markdown 파일을 저장할 수 없습니다.");
+  }
+}
 
-    const message = error instanceof Error ? error.message : "Confluence 페이지 트리 조회 중 알 수 없는 오류가 발생했습니다.";
-    showNotice(message);
+async function writeCommandFailureReport(storage: ProjectStorageAdapter, result: CommandResult): Promise<CommandResult> {
+  try {
+    if (!(await storage.exists("logs"))) await storage.mkdir("logs");
+    await storage.write("logs/latest.md", `# Pull 실패 또는 부분 완료\n\n- 실행 시각: ${new Date().toISOString()}\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
+    return { ...result, reportPath: "logs/latest.md", reportWritten: true };
+  } catch {
+    return { ...result, reportPath: null, reportWritten: false };
   }
 }
 
@@ -522,7 +394,7 @@ function buildExistingPagePathById(localMarkdownFiles: Array<{ vaultPath: string
 }
 
 function collectPagesForHtmlAttachmentFetch(
-  root: ConfluenceRootContentTreeResult["root"],
+  root: Extract<ConfluenceRootContentTreeResult, { ok: true }>["root"],
   pages: ConfluencePageTreePage[]
 ): ConfluencePageTreePage[] {
   const pagesById = new Map<string, ConfluencePageTreePage>();
@@ -538,7 +410,7 @@ function collectPagesForHtmlAttachmentFetch(
   return Array.from(pagesById.values());
 }
 
-function isConfluencePageTreeNode(root: ConfluenceRootContentTreeResult["root"]): root is ConfluencePageTreeNode {
+function isConfluencePageTreeNode(root: Extract<ConfluenceRootContentTreeResult, { ok: true }>["root"]): root is ConfluencePageTreeNode {
   return "pageId" in root;
 }
 
@@ -591,7 +463,7 @@ interface PullReportInput {
   pulledAt: Date;
   createCount: number;
   updateCount: number;
-  writeResult: Extract<PullSyncApplyResult, { ok: true }>;
+  writeResult: PullSyncApplySuccess;
   syncPlan: ReturnType<typeof createPullSyncPlan>;
   fetchFailureCount: number;
   fetchFailures: ConfluencePageTreeError[];

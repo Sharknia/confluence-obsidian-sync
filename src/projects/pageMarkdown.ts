@@ -1,3 +1,4 @@
+import { parseConfluencePageUrl } from "../confluence/pageUrl";
 import { createHash } from "crypto";
 import type { ConfluenceHtmlAttachment } from "../confluence/attachments";
 import type {
@@ -140,6 +141,15 @@ export function parsePageMarkdownMetadata(markdown: string): ParsedPageMarkdownM
     contentHash: readQuotedFrontmatterValue(frontmatter, "confluenceContentHash"),
     bodyMarkdown: removeFrontmatterBodySeparator(markdown.slice(frontmatterMatch[0].length)),
   };
+}
+
+export function hasVerifiedMarkdownSource(markdown: string, baseUrl: string): boolean {
+  const metadata = parsePageMarkdownMetadata(markdown);
+  const frontmatter = markdown.match(FRONTMATTER_PATTERN)?.[1] ?? "";
+  const sourceUrl = readQuotedFrontmatterValue(frontmatter, "confluenceSourceUrl");
+  if (!metadata || !sourceUrl) return false;
+  const source = parseConfluencePageUrl(sourceUrl, baseUrl);
+  return source.ok && source.pageId === metadata.pageId;
 }
 
 export function updatePageMarkdownFrontmatterAfterPush(

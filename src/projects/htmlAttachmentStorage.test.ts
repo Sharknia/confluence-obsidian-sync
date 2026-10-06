@@ -43,6 +43,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -69,6 +70,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -91,6 +93,7 @@ describe("writeHtmlAttachmentFiles", () => {
       ok: false,
       reason: "storage-error",
       message: "HTML 첨부 파일을 저장할 수 없습니다.",
+      writtenFileCount: 0, completedPaths: [], failedPath: "confluence/Root/Root.assets/prototype.html", failedStage: "write", outcomeUnknown: true,
     });
   });
 
@@ -102,6 +105,7 @@ describe("writeHtmlAttachmentFiles", () => {
       const files: HtmlAttachmentFileToWrite[] = [
         {
           attachmentFileId: "att-1::0",
+          versionNumber: 1,
           pageId: "100",
           pageTitle: "Root",
           attachmentId: "att-1",
@@ -116,6 +120,7 @@ describe("writeHtmlAttachmentFiles", () => {
         ok: false,
         reason: "storage-error",
         message: "HTML 첨부 파일을 저장할 수 없습니다.",
+        writtenFileCount: 0, completedPaths: [], failedPath: null, failedStage: "validate", outcomeUnknown: false,
       });
       expect(storage.checkedFolders).toEqual([]);
       expect(storage.createdFolders).toEqual([]);
@@ -128,6 +133,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",
@@ -138,6 +144,7 @@ describe("writeHtmlAttachmentFiles", () => {
       },
       {
         attachmentFileId: "att-2::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-2",
@@ -168,6 +175,7 @@ describe("writeHtmlAttachmentFiles", () => {
     const files: HtmlAttachmentFileToWrite[] = [
       {
         attachmentFileId: "att-1::0",
+        versionNumber: 1,
         pageId: "100",
         pageTitle: "Root",
         attachmentId: "att-1",

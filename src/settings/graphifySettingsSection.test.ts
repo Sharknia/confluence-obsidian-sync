@@ -1,11 +1,12 @@
 import { parseHTML } from "linkedom";
 import { describe, expect, it, vi } from "vitest";
-import type { ConfluenceSyncSettings } from "./defaultSettings";
-import { appendGraphifySettingsSection } from "./graphifySettingsSection";
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, type ConfluenceSyncSettings } from "./defaultSettings";
+import { appendGraphifySettingsSection, type GraphifySettingConstructor } from "./graphifySettingsSection";
 
 describe("appendGraphifySettingsSection", () => {
   function createSettings(): ConfluenceSyncSettings {
     return {
+      ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
       confluenceBaseUrl: "https://selta.atlassian.net",
       userEmail: "",
       apiToken: "",
@@ -51,11 +52,7 @@ class FakeSetting {
   }
 
   addText(
-    callback: (text: {
-      setPlaceholder: (value: string) => unknown;
-      setValue: (value: string) => unknown;
-      onChange: (handler: (value: string) => Promise<void>) => unknown;
-    }) => void
+    callback: Parameters<InstanceType<GraphifySettingConstructor>["addText"]>[0]
   ): this {
     const inputEl = this.containerEl.ownerDocument.createElement("input");
     const textControl = {

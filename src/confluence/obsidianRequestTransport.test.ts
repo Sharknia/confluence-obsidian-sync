@@ -1,3 +1,4 @@
+import type { RequestUrlResponse } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { createObsidianRequestTransportFromRequestUrl } from "./obsidianRequestTransportFactory";
 
@@ -95,7 +96,8 @@ describe("createObsidianRequestTransportFromRequestUrl", () => {
     const requestUrl = vi.fn(() =>
       Promise.resolve({
         status: 200,
-        headers: undefined,
+        // 타입 선언과 달리 헤더가 없는 런타임 응답을 재현한다.
+        headers: undefined as unknown as RequestUrlResponse["headers"],
         get json(): unknown {
           throw new Error("Unexpected JSON parse");
         },

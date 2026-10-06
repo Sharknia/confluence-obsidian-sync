@@ -373,6 +373,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: false,
           needsProject: false,
@@ -398,6 +400,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: false,
           needsProject: false,
@@ -421,6 +425,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: false,
           needsProject: false,
@@ -452,6 +458,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: true,
           needsProject: false,
@@ -478,6 +486,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: true,
           needsProject: false,
@@ -505,6 +515,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: true,
           needsProject: false,
@@ -529,6 +541,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: true,
           needsProject: false,
@@ -571,6 +585,8 @@ describe("renderSyncPanelContent", () => {
       containerEl,
       createState({
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: false,
           installed: false,
           needsProject: false,
@@ -596,6 +612,8 @@ describe("renderSyncPanelContent", () => {
         hasProject: false,
         canRunProjectActions: false,
         graphify: {
+          externalCommand: "",
+          runMode: { kind: "cli-code-update" },
           visible: true,
           installed: true,
           needsProject: true,

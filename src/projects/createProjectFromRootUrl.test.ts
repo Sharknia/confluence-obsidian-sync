@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { RequestUrlParam } from "obsidian";
 import type { ConfluenceRequestTransport } from "../confluence/requestTransport";
-import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, type ConfluenceSyncSettings } from "../settings/defaultSettings";
 import type { ProjectStorageAdapter } from "./projectStorage";
 import { createProjectFromRootUrl } from "./createProjectFromRootUrl";
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
   return {
+    ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
     confluenceBaseUrl: "https://selta.atlassian.net/wiki",
     userEmail: "owner@example.com",
     apiToken: "secret-token",

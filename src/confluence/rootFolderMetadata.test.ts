@@ -3,10 +3,11 @@ import type { RequestUrlParam } from "obsidian";
 import { buildBasicAuthorizationHeader } from "./authentication";
 import { fetchRootFolderMetadata } from "./rootFolderMetadata";
 import type { ConfluenceRequestTransport } from "./requestTransport";
-import type { ConfluenceSyncSettings } from "../settings/defaultSettings";
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS, type ConfluenceSyncSettings } from "../settings/defaultSettings";
 
 function createSettings(overrides: Partial<ConfluenceSyncSettings> = {}): ConfluenceSyncSettings {
   return {
+    ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
     confluenceBaseUrl: "https://selta.atlassian.net",
     userEmail: "owner@example.com",
     apiToken: "secret-token",

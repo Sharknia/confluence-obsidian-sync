@@ -26,3 +26,6 @@ vault-template/.obsidian/plugins/confluence-obsidian-sync/manifest.json
 vault-template/.obsidian/plugins/confluence-obsidian-sync/styles.css
 
 docs/superpowers/plans/
+
+# CLI와 플러그인의 공동 동기화 잠금
+/.confluence-sync/operation.lock

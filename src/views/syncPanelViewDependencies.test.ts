@@ -1,3 +1,4 @@
+import { DEFAULT_CONFLUENCE_SYNC_SETTINGS } from "../settings/defaultSettings";
 import { describe, expect, it, vi } from "vitest";
 import type { GraphifyOutputFileState } from "../graphify/graphifyCli";
 import { createSyncPanelViewDependencies } from "./syncPanelViewDependencies";
@@ -15,6 +16,7 @@ describe("createSyncPanelViewDependencies", () => {
     };
     const dependencies = createSyncPanelViewDependencies({
       settings: {
+        ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
         confluenceBaseUrl: "https://selta.atlassian.net",
         userEmail: "",
         apiToken: "",
@@ -69,6 +71,7 @@ describe("createSyncPanelViewDependencies", () => {
     const onUpdatePlugin = vi.fn();
     const dependencies = createSyncPanelViewDependencies({
       settings: {
+        ...DEFAULT_CONFLUENCE_SYNC_SETTINGS,
         confluenceBaseUrl: "https://selta.atlassian.net",
         userEmail: "",
         apiToken: "",

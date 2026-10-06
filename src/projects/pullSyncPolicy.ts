@@ -49,6 +49,7 @@ export interface CreatePullSyncPlanInput {
 
 export interface CreatePullSyncPlanOptions {
   forceOverwriteLocalChanges?: boolean;
+  allowSafeDelete?: boolean;
 }
 
 export function createPullSyncPlan(
@@ -106,6 +107,11 @@ export function createPullSyncPlan(
 
     if (localFile.hasLocalChanges) {
       skippedLocalChanges.push(withSkipReason(localFile, "disappeared-local-change"));
+      continue;
+    }
+
+    // ponytail: 불완전한 Pull에서는 전체 안전 삭제 보류, 필요하면 실패 페이지별 보호로 좁힌다.
+    if (options.allowSafeDelete === false) {
       continue;
     }
 
