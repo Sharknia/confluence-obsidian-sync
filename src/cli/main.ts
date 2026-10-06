@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+import { existsSync, realpathSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { isAbsolute, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -102,7 +104,7 @@ export async function runCli(args: string[], environment: NodeJS.ProcessEnv = pr
     } });
     command = positionals[0] ?? "help";
     if (values.version) return { command: "version", status: "success", reason: "version", message: packageInfo.version, version: packageInfo.version };
-    if (values.help || command === "help") return { command: "help", status: "success", reason: "help", message: "build:cli 후 node dist/cli.mjs <명령> --vault <절대 경로>로 실행합니다.", supportedCommands: commands,
+    if (values.help || command === "help") return { command: "help", status: "success", reason: "help", message: "confluence-sync <명령> --vault <절대 경로>로 실행합니다.", supportedCommands: commands,
       options: { "--vault": "모든 명령: 이미 존재하는 vault의 절대 경로", "--project": "status/Pull/Push: 프로젝트 폴더의 vault 상대 경로",
         "--root": "init: Confluence 페이지·폴더 URL", "--file": "pull-page/push-page: Markdown 파일의 vault 상대 경로",
         "--force": "pull-tree: 백업 없이 강제 덮어쓰기", "--yes": "Pull/Push: 위험한 작업의 명시적 확인" } };
@@ -165,7 +167,7 @@ export async function runCli(args: string[], environment: NodeJS.ProcessEnv = pr
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && existsSync(process.argv[1]) && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const result = await runCli(process.argv.slice(2));
   let output = JSON.stringify(result);
   for (const value of [process.env.CONFLUENCE_API_TOKEN, process.env.CONFLUENCE_USER_EMAIL]) {

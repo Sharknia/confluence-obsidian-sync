@@ -224,7 +224,7 @@ MVP는 다음 조건을 만족하면 성공으로 본다.
 
 ### 12.1 핵심 결정
 
-배포는 Public GitHub의 플러그인 코드 저장소와 vault template 저장소를 분리한다. 플러그인 ZIP 또는 vault template으로 Obsidian을 시작할 수 있다. 독립 CLI는 코드 저장소에서 빌드한 `dist/cli.mjs`로 실행하며 플러그인 ZIP과 template에는 동봉하지 않는다.
+배포는 Public GitHub의 플러그인 코드 저장소와 vault template 저장소를 분리한다. 플러그인 ZIP 또는 vault template으로 Obsidian을 시작할 수 있다. 버전 `0.1.64`부터 vault template의 `cli/confluence-sync-cli.tgz`를 로컬 npm 패키지로 전역 설치한다. 플러그인 ZIP은 기존 세 파일만 포함한다. 개발용 `dist/cli.mjs` 직접 실행도 유지한다.
 
 사용자는 vault template 저장소를 clone하거나 ZIP으로 내려받고, 해당 폴더를 Obsidian vault로 연다. vault 안에는 플러그인 빌드 산출물과 공통 Obsidian 설정이 포함된다. 사용자별 인증 정보와 Confluence에서 내려받은 문서 산출물은 Git에서 제외한다.
 
@@ -240,6 +240,8 @@ MVP는 다음 조건을 만족하면 성공으로 본다.
 
 ```text
 confluence-vault-template/
+  cli/
+    confluence-sync-cli.tgz
   .obsidian/
     community-plugins.json
     plugins/
@@ -390,3 +392,11 @@ CLI는 이미 존재하는 vault의 절대 경로와 문서의 상대 경로를 
 파일 적용 중 실패는 실제 완료 개수와 실패 경로를 보존한다. Push 응답 유실은 원격 반영 여부 불명으로 반환하고 자동 재전송하지 않는다. 플러그인과 CLI는 vault 단위의 동기화 잠금과 로컬 변경 검사를 공유한다.
 
 실행 방법은 [README](../README.md), 구현 범위와 검증 상태는 [CLI 작업계획서](cli-implementation-plan.md)에 기록한다.
+
+## 16. Vault 기반 CLI 전역 설치 배포
+
+사용자가 vault template을 받은 뒤 포함된 CLI 설치 패키지에 설치 명령 한 줄을 실행하면 `confluence-sync`를 전역 명령으로 사용할 수 있게 한다. Node.js 22 이상과 준비된 사용자 전용 npm global prefix와 PATH을 전제로 하며, 소비자에게 코드 clone·빌드·개인 shell 함수 작성을 요구하지 않는다.
+
+CLI 프로그램은 vault와 독립적으로 설치하고 실행 시 `--vault`를 명시한다. 인증이나 프로젝트 선택을 사용자 전역에 복사하지 않으며 여러 vault를 같은 명령으로 다룬다. 공개 npm 발행과 자체 자동 업데이트는 이 배포의 필수 조건이 아니다.
+
+버전 `0.1.64`에서 이 배포 방식을 구현했다. 패키지 구성, 권한·PATH 전제, 버전 관리와 사용자 환경 검증은 [Vault CLI 전역 설치 배포 작업계획서](vault-cli-distribution-plan.md)에 기록한다.

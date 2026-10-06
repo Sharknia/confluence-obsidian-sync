@@ -1,10 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, writeFile, rm, symlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, writeFile, rm, symlink, chmod, copyFile, rename, readdir } from "node:fs/promises";
+import { join, resolve, dirname, delimiter } from "node:path";
 import { tmpdir } from "node:os";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
+import { packageCli } from "../../scripts/package-cli.mjs";
+import packageInfo from "../../package.json";
 import { createNodeVaultStorage } from "../platform/nodeVaultStorage";
 import { withVaultOperationLock } from "../platform/vaultOperationLock";
 import { createNodeRequestTransport } from "../confluence/nodeRequestTransport";
@@ -17,7 +20,43 @@ import { createPageMarkdownContent } from "../projects/pageMarkdown";
 const execute = promisify(execFile);
 const cwd = resolve(import.meta.dirname, "../..");
 
-beforeAll(async () => { await execute(process.execPath, ["esbuild.cli.config.mjs"], { cwd }); });
+const windows = process.platform === "win32";
+const npmCli = windows ? join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")
+  : resolve(dirname(process.execPath), "../lib/node_modules/npm/bin/npm-cli.js");
+let installRoot: string;
+let installedCommand: string;
+let installEnvironment: NodeJS.ProcessEnv;
+
+async function npm(args: string[], environment = installEnvironment) {
+  return execute(process.execPath, [npmCli, ...args], { cwd: installRoot, env: environment });
+}
+async function globalCommand(args: string[], environment = installEnvironment) {
+  return windows
+    ? execute("cmd.exe", ["/d", "/s", "/c", `""${installedCommand}" ${args.map((value) => `"${value}"`).join(" ")}"`], { cwd: installRoot, env: environment, windowsVerbatimArguments: true })
+    : execute(installedCommand, args, { cwd: installRoot, env: environment });
+}
+
+beforeAll(async () => {
+  installRoot = await mkdtemp(join(tmpdir(), "confluence 설치 "));
+  const prefix = join(installRoot, "사용자 prefix");
+  const bin = windows ? prefix : join(prefix, "bin");
+  installEnvironment = { ...process.env, npm_config_prefix: prefix, npm_config_cache: join(installRoot, "cache"),
+    npm_config_userconfig: join(installRoot, "user.npmrc"), npm_config_globalconfig: join(installRoot, "global.npmrc"),
+    npm_config_offline: "true", npm_config_audit: "false", npm_config_fund: "false", npm_config_registry: "http://127.0.0.1:9",
+    PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` };
+  await Promise.all([writeFile(installEnvironment.npm_config_userconfig!, ""), writeFile(installEnvironment.npm_config_globalconfig!, "")]);
+  await execute(process.execPath, ["esbuild.cli.config.mjs"], { cwd });
+  const archive = await packageCli(cwd);
+  const download = join(installRoot, "받은 vault/cli");
+  await mkdir(download, { recursive: true });
+  await copyFile(archive, join(download, "confluence-sync-cli.tgz"));
+  await npm(["install", "--global", "--engine-strict", "./받은 vault/cli/confluence-sync-cli.tgz"]);
+  // 원본 배포물을 이동해도 npm이 설치한 복사본은 독립적으로 실행되어야 한다.
+  await rename(join(installRoot, "받은 vault"), join(installRoot, "이동한 vault"));
+  installedCommand = join(bin, windows ? "confluence-sync.cmd" : "confluence-sync");
+}, 30000);
+
+afterAll(async () => { if (installRoot) await rm(installRoot, { recursive: true, force: true }); });
 
 async function scenario(action: (context: Awaited<ReturnType<typeof fixture>>) => Promise<void>): Promise<void> {
   const current = await fixture();
@@ -78,13 +117,13 @@ async function fixture() {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test server address unavailable");
   const base = `http://127.0.0.1:${address.port}`;
-  const environment = { ...process.env, CONFLUENCE_BASE_URL: base, CONFLUENCE_USER_EMAIL: "test@example.com", CONFLUENCE_API_TOKEN: "cli-test-token" };
+  const environment = { ...installEnvironment, CONFLUENCE_BASE_URL: base, CONFLUENCE_USER_EMAIL: "test@example.com", CONFLUENCE_API_TOKEN: "cli-test-token" };
   async function run(args: string[], pnpm = false) {
     let stdout = "", stderr = "", code = 0;
     try {
-      const result = await execute(pnpm ? "pnpm" : process.execPath,
-        pnpm ? ["--silent", "run", "cli", ...args, "--vault", vault] : ["dist/cli.mjs", ...args, "--vault", vault],
-        { cwd, env: environment });
+      const result = pnpm
+        ? await execute(process.execPath, [process.env.npm_execpath!, "--silent", "run", "cli", ...args, "--vault", vault], { cwd, env: environment })
+        : await globalCommand([...args, "--vault", vault], environment);
       stdout = result.stdout; stderr = result.stderr;
     } catch (error) {
       const failure = error as { code: number; stdout: string; stderr: string };
@@ -229,7 +268,7 @@ describe("standalone CLI", () => {
       expect(await storage.exists("new.md")).toBe(false);
       await writeFile(join(vault, "new.md"), "Another writer");
       await expect(storage.write("new.md", "Remote")).rejects.toMatchObject({ reason: "local-changed" });
-      await symlink(tmpdir(), join(vault, "escape"));
+      await symlink(tmpdir(), join(vault, "escape"), windows ? "junction" : "dir");
       await expect(storage.read("escape/file.md")).rejects.toMatchObject({ reason: "unsafe-path" });
       await expect(storage.read("../file.md")).rejects.toMatchObject({ reason: "unsafe-path" });
     });
@@ -317,4 +356,72 @@ describe("standalone CLI", () => {
       expect(request.mock.calls[1]?.[1]?.headers).toEqual({ Accept: "*/*" });
     } finally { request.mockRestore(); }
   });
+});
+
+
+describe("vault CLI distribution", () => {
+  it("ships only standalone files with license notices and runs through the global entrypoint", async () => {
+    const files = (await execute("tar", ["-tzf", join(installRoot, "이동한 vault/cli/confluence-sync-cli.tgz")])).stdout.trim().split("\n").sort();
+    expect(files).toEqual(["LICENSE", "README.md", "THIRD-PARTY-NOTICES.txt", "cli.mjs", "package.json"].map((name) => `package/${name}`).sort());
+    const prefix = installEnvironment.npm_config_prefix!;
+    const directory = join(prefix, windows ? "node_modules" : "lib/node_modules", "confluence-obsidian-sync-cli");
+    const info = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as { version: string; engines: { node: string }; dependencies?: unknown; scripts?: unknown };
+    expect(info.version).toBe(packageInfo.version);
+    expect(info.engines.node).toBe(">=22");
+    expect(info.dependencies).toBeUndefined(); expect(info.scripts).toBeUndefined();
+    expect((await readFile(join(directory, "cli.mjs"), "utf8")).startsWith("#!/usr/bin/env node\n")).toBe(true);
+    const notices = await readFile(join(directory, "THIRD-PARTY-NOTICES.txt"), "utf8");
+    for (const license of ["ISC", "MIT", "BSD-2-Clause"]) expect(notices).toContain(license);
+    expect(notices).toContain("boolbase@1.0.0");
+    expect((await globalCommand(["--version"])).stdout).toContain(packageInfo.version);
+    const help = (await globalCommand(["--help"])).stdout;
+    expect(help).toContain("confluence-sync <명령> --vault <절대 경로>");
+    expect(help).not.toContain("build:cli");
+    if (!windows) {
+      await expect(execute("confluence-sync", ["--version"], { cwd: installRoot, env: { ...installEnvironment, PATH: dirname(process.execPath) } }))
+        .rejects.toMatchObject({ code: "ENOENT" });
+      const restricted = join(installRoot, "権限なし"); await mkdir(restricted); await chmod(restricted, 0o500);
+      try {
+        await expect(npm(["install", "--global", "--engine-strict", "./이동한 vault/cli/confluence-sync-cli.tgz"], { ...installEnvironment, npm_config_prefix: restricted }))
+          .rejects.toHaveProperty("stderr", expect.stringContaining("EACCES"));
+      } finally { await chmod(restricted, 0o700); }
+    }
+    // import는 엔트리 실행과 구별된다.
+    expect((await execute(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(pathToFileURL(join(directory, "cli.mjs")).href)})`, "unrelated-argument"], { cwd: installRoot })).stdout).toBe("");
+  });
+
+  it("uses the selected vault without storing a global default and requires the option", async () => {
+    await scenario(async ({ vault, run, init }) => {
+      const project = await init();
+      expect((await run(["status", "--project", project])).code).toBe(0);
+      const other = join(installRoot, "다른 vault"); await mkdir(other);
+      await expect(globalCommand(["status", "--vault", other])).rejects.toHaveProperty("stdout", expect.stringContaining("project-not-configured"));
+      expect(await readdir(other)).toEqual([]);
+      await expect(globalCommand(["status"])).rejects.toMatchObject({ code: 1 });
+      expect(vault).not.toBe(other);
+    });
+  });
+
+  it("reinstalls and removes only the global program, preserving vault data and unrelated commands", async () => {
+    const archive = "./이동한 vault/cli/confluence-sync-cli.tgz";
+    const vault = join(installRoot, "이동한 vault");
+    const sentinel = join(vault, "사용자 문서.md"); await writeFile(sentinel, "keep vault");
+    const unrelated = join(dirname(installedCommand), "another-command"); await writeFile(unrelated, "keep command");
+    const oldPackage = join(installRoot, "old-package"); await mkdir(oldPackage);
+    await writeFile(join(oldPackage, "package.json"), JSON.stringify({ name: "confluence-obsidian-sync-cli", version: "0.1.0", bin: { "confluence-sync": "cli.cjs" } }));
+    await writeFile(join(oldPackage, "cli.cjs"), '#!/usr/bin/env node\nconsole.log(JSON.stringify({ version: "0.1.0" }));\n');
+    await npm(["pack", "./old-package", "--pack-destination", installRoot]);
+    await npm(["install", "--global", "--engine-strict", "./confluence-obsidian-sync-cli-0.1.0.tgz"]);
+    expect((await globalCommand(["--version"])).stdout).toContain("0.1.0");
+    await npm(["install", "--global", "--engine-strict", archive]);
+    await npm(["install", "--global", "--engine-strict", archive]);
+    expect((await globalCommand(["--version"])).stdout).toContain(packageInfo.version);
+    await npm(["uninstall", "--global", "confluence-obsidian-sync-cli"]);
+    expect(await readFile(sentinel, "utf8")).toBe("keep vault");
+    expect(await readFile(unrelated, "utf8")).toBe("keep command");
+    await expect(readFile(installedCommand)).rejects.toMatchObject({ code: "ENOENT" });
+    await writeFile(installedCommand, "another program");
+    await expect(npm(["install", "--global", "--engine-strict", archive])).rejects.toMatchObject({ code: 1 });
+    expect(await readFile(installedCommand, "utf8")).toBe("another program");
+  }, 30000);
 });
